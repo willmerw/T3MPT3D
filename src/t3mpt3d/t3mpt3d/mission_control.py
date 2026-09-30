@@ -24,8 +24,12 @@ class MissionLog():
 
     def go_to_plank(self):
         if self.plank_pos is None:
-            return
-        return self.plank_pos, self.players[~self.plank_leader]
+            return None, []
+        
+        # FIX: Find all players who are NOT the leader
+        other_players = [p for p in self.players if p != self.plank_leader]
+        
+        return self.plank_pos, other_players
 
 class MissionControlNode(Node):
     def __init__(self):
@@ -107,9 +111,11 @@ class MissionControlNode(Node):
     def plank_pos_callback(self, msg, robot_name):
           self.get_logger().info(f"{robot_name} reached the plank! Value: {msg.data}")
           # Add your logic here
-          self.mission_log.set_plank_leader(robot_name, robot_name)
+          self.mission_log.set_plank_leader(msg, robot_name)
 
-          self.goal_pose_publish(robot_name,)
+          target_pose, followers = self.mission_log.go_to_plank()
+
+          self.goal_pose_publish(robot_name, msg.data)
 
 
 
@@ -137,144 +143,7 @@ class MissionControlNode(Node):
     def reached_callback(self, msg, robot_name):
         pass
 
-    def publish_pick(self) -> PoseStamped:
-        if not self.pick_stations:
-            self.get_logger().warn("No pick stations configured.")
-            return None
-
-        entry = self.pick_stations[self.current_pick_idx]
-        frame_id = self.get_parameter("frame_id").get_parameter_value().string_value
-        reference_topic = (
-            self.get_parameter("reference_topic").get_parameter_value().string_value
-        )
-
-        pose_msg = entry.to_pose_stamped(
-            frame_id=frame_id, stamp=self.get_clock().now().to_msg()
-        )
-        self.reference_publisher.publish(pose_msg)
-
-        self.get_logger().info(
-            f"[PICK] Published {entry.name} (brick {entry.brick_count}) "
-            f"target {entry.coordinates} to '{reference_topic}'."
-        )
-
-        # Advance pick station and update state
-        self.current_pick_idx = (self.current_pick_idx + 1) % len(self.pick_stations)
-        self.current_action = "PLACE"
-        self.state = "NAV_TO_PICK"
-        self.reached = False
-        return pose_msg
-
-    def publish_place(self) -> PoseStamped:
-        if not self.place_stations:
-            self.get_logger().warn("No place stations configured.")
-            return None
-
-        entry = self.place_stations[self.current_place_idx]
-        frame_id = self.get_parameter("frame_id").get_parameter_value().string_value
-        reference_topic = (
-            self.get_parameter("reference_topic").get_parameter_value().string_value
-        )
-
-        pose_msg = entry.to_pose_stamped(
-            frame_id=frame_id, stamp=self.get_clock().now().to_msg()
-        )
-        self.reference_publisher.publish(pose_msg)
-
-        self.get_logger().info(
-            f"[PLACE] Published {entry.name} (brick {entry.brick_count}) "
-            f"target {entry.coordinates} to '{reference_topic}'."
-        )
-
-        # Advance place station and update state
-        self.current_place_idx = (self.current_place_idx + 1) % len(self.place_stations)
-        self.current_action = "PICK"
-        self.state = "NAV_TO_PLACE"
-        self.reached = False
-        return pose_msg
-
-    def reached_callback(self, msg: Bool):
-        """Called when robot target reached status is updated."""
-        trigger_on_true_only = (
-            self.get_parameter("trigger_on_true_only").get_parameter_value().bool_value
-        )
-        self.reached = msg.data
-        if trigger_on_true_only and not msg.data:
-            return
-
-        pick_ready_topic = (
-            self.get_parameter("pick_ready_topic").get_parameter_value().string_value
-        )
-        place_ready_topic = (
-            self.get_parameter("place_ready_topic").get_parameter_value().string_value
-        )
-
-        self.get_logger().info(
-            f"Target reached signal received: {msg.data} (current state: {self.state})"
-        )
-
-        if self.state == "NAV_TO_PICK":
-            self.state = "PICKING"
-            self.get_logger().info(
-                f"Pick position reached! Publishing True to '{pick_ready_topic}'."
-            )
-            self.pick_ready_publisher.publish(Bool(data=True))
-
-        elif self.state == "NAV_TO_PLACE":
-            self.state = "PLACING"
-            self.get_logger().info(
-                f"Place position reached! Publishing True to '{place_ready_topic}'."
-            )
-            self.place_ready_publisher.publish(Bool(data=True))
-
-        else:
-            self.get_logger().info(
-                f"Target reached received while in state '{self.state}'; not in a navigation state."
-            )
-
-    def pick_done_callback(self, msg: Bool):
-        """Called when pick mission finishes -> publishes Place pose."""
-        trigger_on_true_only = (
-            self.get_parameter("trigger_on_true_only").get_parameter_value().bool_value
-        )
-        if trigger_on_true_only and not msg.data:
-            return
-
-        self.get_logger().info("Pick mission completed! Sending Place reference pose.")
-        self.publish_place()
-
-    def place_done_callback(self, msg: Bool):
-        """Called when place mission finishes -> publishes next Pick pose."""
-        trigger_on_true_only = (
-            self.get_parameter("trigger_on_true_only").get_parameter_value().bool_value
-        )
-        if trigger_on_true_only and not msg.data:
-            return
-
-        self.get_logger().info(
-            "Place mission completed! Sending next Pick reference pose."
-        )
-        self.publish_pick()
-
-    def trigger_callback(self, msg: Bool):
-        """Manual / start trigger to start or advance the cycle."""
-        trigger_on_true_only = (
-            self.get_parameter("trigger_on_true_only").get_parameter_value().bool_value
-        )
-        if trigger_on_true_only and not msg.data:
-            self.get_logger().info("Manual trigger received with data=False. Ignoring.")
-            return
-
-        self.get_logger().info(
-            f"Manual trigger received. Current action: {self.current_action}, state: {self.state}"
-        )
-        if self.state == "IDLE":
-            self.publish_pick()
-        elif self.current_action == "PICK":
-            self.publish_pick()
-        else:
-            self.publish_place()
-
+    
 
 def main(args=None):
     rclpy.init(args=args)
