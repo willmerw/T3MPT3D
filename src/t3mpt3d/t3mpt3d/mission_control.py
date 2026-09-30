@@ -12,6 +12,9 @@ class MissionLog():
         self.plank_leader = None
         self.players = players
         self.plank_pos = None
+        self.num_palyers = len(self.players)
+
+        self.plankers = []
 
         self.maper = None
 
@@ -20,6 +23,7 @@ class MissionLog():
             if player in self.players:
                 self.plank_pos = plank_pos
                 self.plank_leader = player
+                self.plankers.append(self.plank_leader)
 
 
     def go_to_plank(self):
@@ -30,6 +34,15 @@ class MissionLog():
         other_players = [p for p in self.players if p != self.plank_leader]
         
         return self.plank_pos, other_players
+    def redgister(self, robot_name:bool):
+        if len(self.plankers) == len(self.players):
+            return True
+        elif robot_name in self.plankers:
+            return True
+        else:
+            self.plankers.append(robot_name)
+            return False
+    
 
 class MissionControlNode(Node):
     def __init__(self):
@@ -106,7 +119,8 @@ class MissionControlNode(Node):
         self.get_logger().info(f"Mission Control initialized for robots: {self.robots}")
 
     def plank_reached_callback(self, msg, robot_name):
-        pass
+        if self.mission_log.redgister(robot_name) is True:
+            self.model_trigger_publish()
 
     def plank_pos_callback(self, msg, robot_name):
           self.get_logger().info(f"{robot_name} reached the plank! Value: {msg.data}")
@@ -115,7 +129,9 @@ class MissionControlNode(Node):
 
           target_pose, followers = self.mission_log.go_to_plank()
 
-          self.goal_pose_publish(robot_name, msg.data)
+          if target_pose:
+            for follower in followers:
+                self.goal_pose_publish(follower, target_pose)
 
 
 
@@ -140,8 +156,23 @@ class MissionControlNode(Node):
         # 4. Return the message as indicated by your type hint
         return goal
 
-    def reached_callback(self, msg, robot_name):
+    def reached_callback(self, msg, robot_name): 
         pass
+    def model_trigger_publish(self, robot_name:str, enable:bool)->Bool:
+        if robot_name not in self.model_trigger_publishers:
+            self.get_logger().error(f"No model publisher found for {robot_name}!")
+            return None
+
+        msg = Bool()
+        msg.data = enable
+
+        self.model_trigger_publishers[robot_name].publish(msg)
+        
+        self.get_logger().info(f"Triggered model for {robot_name} (Value: {enable})")
+
+        return msg
+
+
 
     
 
