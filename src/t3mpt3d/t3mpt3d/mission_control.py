@@ -25,15 +25,14 @@ class MissionLog():
                 self.plank_leader = player
                 self.plankers.append(self.plank_leader)
 
-
     def go_to_plank(self):
         if self.plank_pos is None:
             return None, []
         
-        # FIX: Find all players who are NOT the leader
         other_players = [p for p in self.players if p != self.plank_leader]
-        
+
         return self.plank_pos, other_players
+
     def redgister(self, robot_name:bool):
         if len(self.plankers) == len(self.players):
             return True
@@ -42,7 +41,7 @@ class MissionLog():
         else:
             self.plankers.append(robot_name)
             return False
-    
+
 
 class MissionControlNode(Node):
     def __init__(self):
@@ -93,9 +92,7 @@ class MissionControlNode(Node):
             self.goal_pose_publishers[robot] = self.create_publisher(
                 PoseStamped, goal_topic, 10
             )
-            self.model_trigger_publishers[robot] = self.create_publisher(
-                Bool, model_topic, 10
-            )
+
             self.exploration_trigger_publishers[robot] = self.create_publisher(
                 Bool, explore_topic, 10
             )
@@ -115,17 +112,20 @@ class MissionControlNode(Node):
                 Bool, reached_topic,
                 partial(self.reached_callback, robot_name=robot), 10
             )
+        self.model_trigger_publishers= self.create_publisher(
+                        Bool, model_topic, 10
+                    )
 
         self.get_logger().info(f"Mission Control initialized for robots: {self.robots}")
 
     def plank_reached_callback(self, msg, robot_name):
         if self.mission_log.redgister(robot_name) is True:
-            self.model_trigger_publish()
+            self.model_trigger_publish(robot_name, False)
 
     def plank_pos_callback(self, msg, robot_name):
           self.get_logger().info(f"{robot_name} reached the plank! Value: {msg.data}")
           # Add your logic here
-          self.mission_log.set_plank_leader(msg, robot_name)
+          self.mission_log.set_plank_leader(msg.pose.position, robot_name)
 
           target_pose, followers = self.mission_log.go_to_plank()
 
@@ -156,7 +156,7 @@ class MissionControlNode(Node):
         # 4. Return the message as indicated by your type hint
         return goal
 
-    def reached_callback(self, msg, robot_name): 
+    def reached_callback(self, msg, robot_name):
         pass
     def model_trigger_publish(self, robot_name:str, enable:bool)->Bool:
         if robot_name not in self.model_trigger_publishers:
@@ -166,15 +166,15 @@ class MissionControlNode(Node):
         msg = Bool()
         msg.data = enable
 
-        self.model_trigger_publishers[robot_name].publish(msg)
-        
+        self.model_trigger_publishers.publish(msg)
+
         self.get_logger().info(f"Triggered model for {robot_name} (Value: {enable})")
 
         return msg
 
 
 
-    
+
 
 def main(args=None):
     rclpy.init(args=args)
