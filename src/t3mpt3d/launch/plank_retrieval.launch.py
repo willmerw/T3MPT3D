@@ -53,24 +53,24 @@ def generate_launch_description():
     custom_nodes = GroupAction([
         PushRosNamespace(namespace),
 
-        Node(
-            package='t3mpt3d',
-            executable='frontier_detector_node',
-            name='frontier_detector',
-            parameters=[{'use_sim_time': use_sim_time}],
-        ),
-        Node(
-            package='t3mpt3d',
-            executable='navigation_node',
-            name='navigation_node',
-            parameters=[{'use_sim_time': use_sim_time}],
-        ),
-        Node(
-            package='t3mpt3d',
-            executable='path_follower_node',
-            name='path_follower_node',
-            parameters=[{'use_sim_time': use_sim_time}],
-        ),
+        # Node(
+        #     package='t3mpt3d',
+        #     executable='frontier_detector_node',
+        #     name='frontier_detector',
+        #     parameters=[{'use_sim_time': use_sim_time}],
+        # ),
+        # Node(
+        #     package='t3mpt3d',
+        #     executable='navigation_node',
+        #     name='navigation_node',
+        #     parameters=[{'use_sim_time': use_sim_time}],
+        # ),
+        # Node(
+        #     package='t3mpt3d',
+        #     executable='path_follower_node',
+        #     name='path_follower_node',
+        #     parameters=[{'use_sim_time': use_sim_time}],
+        # ),
         Node(
             package='rviz2',
             executable='rviz2',
@@ -78,6 +78,10 @@ def generate_launch_description():
             arguments=['-d', rviz_config_file],
             output='screen',
             parameters=[{'use_sim_time': use_sim_time}],
+            remappings=[
+                ('/tf', '/tf'),
+                ('/tf_static', '/tf_static')
+            ],
         ),
     ])
 
@@ -88,6 +92,13 @@ def generate_launch_description():
           {
             'use_lifecycle_manager': use_lifecycle_manager,
             'use_sim_time': use_sim_time,
+
+            # --- ADD THESE 4 LINES ---
+            'odom_frame': [namespace, '/odom'],
+            'base_frame': [namespace, '/base_footprint'],
+            'map_frame': [namespace, '/map'],
+            'scan_topic': ['/', namespace, '/scan'],
+            # -------------------------
           }
         ],
         package='slam_toolbox',
@@ -95,8 +106,11 @@ def generate_launch_description():
         name='slam_toolbox',
         output='screen',
         namespace=namespace,
+        remappings=[
+            ('/tf', '/tf'),
+            ('/tf_static', '/tf_static')
+        ],
     )
-
     # 4. Lifecycle Events for SLAM
     configure_event = EmitEvent(
         event=ChangeState(
