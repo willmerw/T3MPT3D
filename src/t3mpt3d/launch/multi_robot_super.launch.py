@@ -75,6 +75,7 @@ def generate_launch_description():
         arguments=['-2.0', '0.5', '0.0', '0.0', '0.0', '0.0', 'world', 'tb3_2/map'],
         parameters=[{'use_sim_time': True}]
     )
+
     # 3. ADD THE NODE TO THE RETURN LIST
     return LaunchDescription([
         simulation,

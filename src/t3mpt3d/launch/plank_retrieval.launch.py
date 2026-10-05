@@ -71,18 +71,18 @@ def generate_launch_description():
         #     name='path_follower_node',
         #     parameters=[{'use_sim_time': use_sim_time}],
         # ),
-        Node(
-            package='rviz2',
-            executable='rviz2',
-            name='rviz',
-            arguments=['-d', rviz_config_file],
-            output='screen',
-            parameters=[{'use_sim_time': use_sim_time}],
-            remappings=[
-                ('/tf', '/tf'),
-                ('/tf_static', '/tf_static')
-            ],
-        ),
+        # Node(
+        #     package='rviz2',
+        #     executable='rviz2',
+        #     name='rviz',
+        #     arguments=['-d', rviz_config_file],
+        #     output='screen',
+        #     parameters=[{'use_sim_time': use_sim_time}],
+        #     remappings=[
+        #         ('/tf', '/tf'),
+        #         ('/tf_static', '/tf_static')
+        #     ],
+        # ),
     ])
 
     # 3. SLAM Toolbox Lifecycle Node Setup
