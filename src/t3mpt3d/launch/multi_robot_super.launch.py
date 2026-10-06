@@ -14,10 +14,10 @@ def generate_launch_description():
     t3mpt3d_pkg = get_package_share_directory('t3mpt3d')
 
     # Path to the Gazebo multi-launch file
-    gazebo_multi_launch = os.path.join(gazebo_pkg, 'launch', '/project/turtlebot3_simulations/turtlebot3_gazebo/launch/multi_robot_world.launch.py')
+    gazebo_multi_launch = os.path.join(gazebo_pkg, 'launch', 'multi_robot_world.launch.py')
 
     # Path to the SLAM/Nav launch file
-    slam_nav_launch = os.path.join(t3mpt3d_pkg, 'launch', '/project/src/t3mpt3d/launch/plank_retrieval.launch.py')
+    slam_nav_launch = os.path.join(t3mpt3d_pkg, 'launch', 'plank_retrieval.launch.py')
 
     # --- INCLUDES ---
     simulation = IncludeLaunchDescription(
@@ -37,13 +37,15 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(slam_nav_launch),
         launch_arguments={
             'namespace': 'tb3_2',
-            'use_sim_time': 'true'   # <--- ADD THIS
+            'use_sim_time': 'true',   # <--- ADD THIS
+            'other_target_topic': '/tb3_1/my_target_topic',
         }.items()
     )
 
     # ==========================================
     # 2. DEFINE YOUR EXTRA NODE HERE
     # ==========================================
+
     mission_node = Node(
         package='t3mpt3d',                  # Replace with your package name
         executable='mission_control_node',      # Replace with your executable name
@@ -59,6 +61,13 @@ def generate_launch_description():
         output='screen',
         parameters=[{'use_sim_time': True}] # Good practice if relying on Gazebo time
     )
+
+    frontier_detector = Node(
+          package='t3mpt3d',
+          executable='frontier_detector_node',
+          parameters=[{'use_sim_time': True}],
+        )
+
     pnk_node = Node(
             package='t3mpt3d',                  # Replace with your package name
             executable='plank_node',      # Replace with your executable name
@@ -94,5 +103,6 @@ def generate_launch_description():
         map_merge_node,
         tf_world_to_tb3_1, # <--- Added
         tf_world_to_tb3_2,  # <--- Added
+        frontier_detector,
         #pnk_node   # <--- Added here
     ])

@@ -11,7 +11,7 @@ from rclpy.duration import Duration
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
 import tf2_geometry_msgs
-from geometry_msgs.msg import PoseStamped, Quaternion, Point
+from geometry_msgs.msg import PoseStamped, Quaternion, Point, PointStamped
 from nav_msgs.msg import Path, OccupancyGrid
 from visualization_msgs.msg import Marker
 from builtin_interfaces.msg import Time as TimeMsg
@@ -105,7 +105,8 @@ class PathPlannerNode(Node):
 
         self.declare_parameter('base_frame', 'base_link')
         self.declare_parameter("goal_pub_topic", "goal_pub_topic")
-        self.declare_parameter("goal_sub_topic", "goal_sub_topic")
+        self.declare_parameter("my_target_topic", "my_target_topic")
+        self.declare_parameter("other_target_topic", "other_target_topic")
 
         self.declare_parameter("segment_size", 0.1)
         self.declare_parameter('tf_timeout_sec', 0.5)
@@ -122,13 +123,16 @@ class PathPlannerNode(Node):
         self.declare_parameter("sticky_bonus", 0.5)
         self.declare_parameter("fail_timeout", 60.0)
         self.declare_parameter("fail_radius", 0.5)
+        self.declare_parameter("w_other", 3.0)
+        self.declare_parameter("r_other", 1.5)
 
         map_topic: str = self.get_parameter('map_topic').get_parameter_value().string_value
         frontier_topic: str = self.get_parameter('frontier_topic').get_parameter_value().string_value
         path_topic: str = self.get_parameter('path_topic').get_parameter_value().string_value
         tree_topic: str = self.get_parameter("tree_topic").get_parameter_value().string_value
         goal_pub_topic: str = self.get_parameter("goal_pub_topic").get_parameter_value().string_value
-        goal_sub_topic: str = self.get_parameter("goal_sub_topic").get_parameter_value().string_value
+        my_target_topic: str = self.get_parameter("my_target_topic").get_parameter_value().string_value
+        other_target_topic: str = self.get_parameter("other_target_topic").get_parameter_value().string_value
 
         self.goal_radius: float = self.get_parameter("goal_radius").get_parameter_value().double_value
         self.goal_bias: float = self.get_parameter("goal_bias").get_parameter_value().double_value
@@ -144,7 +148,8 @@ class PathPlannerNode(Node):
         self.sticky_bonus: float = self.get_parameter("sticky_bonus").get_parameter_value().double_value
         self.fail_timeout: float = self.get_parameter("fail_timeout").get_parameter_value().double_value
         self.fail_radius: float = self.get_parameter("fail_radius").get_parameter_value().double_value
-
+        self.w_other: float = self.get_parameter("w_other").get_parameter_value().double_value
+        self.r_other: float = self.get_parameter("r_other").get_parameter_value().double_value
 
         self.base_frame: str = self.get_parameter('base_frame').get_parameter_value().string_value
         self.tf_timeout = Duration(seconds=self.get_parameter('tf_timeout_sec').get_parameter_value().double_value)
@@ -159,12 +164,13 @@ class PathPlannerNode(Node):
         # Publishers
         self.path_pub =  self.create_publisher(Path, path_topic, default_qos)
         self.tree_pub = self.create_publisher(Marker, tree_topic, default_qos)
-        self.pub_goal = self.create_publisher(Marker, goal_pub_topic, default_qos)
+        self.goal_pub = self.create_publisher(Marker, goal_pub_topic, default_qos)
+        self.target_pub = self.create_publisher(PointStamped, my_target_topic, default_qos)
 
         # Subscribers
         self.map_sub = self.create_subscription(OccupancyGrid, map_topic, self._on_map, default_qos)
         self.frontier_sub = self.create_subscription(OccupancyGrid, frontier_topic, self._on_frontier, default_qos)
-        #self.goal_sub = self.create_subscription(Marker, goal_sub_topic, self._goal_point, default_qos)
+        self.target_sub = self.create_subscription(PointStamped, other_target_topic, self._other_target, default_qos)
 
         # TF
         self.tf_buffer = tf2_ros.Buffer(cache_time=Duration(seconds=10.0))
@@ -189,6 +195,7 @@ class PathPlannerNode(Node):
         self.rng = np.random.default_rng(0)
         self._latest_map: Optional[OccupancyGrid] = None
         self._latest_frontier: Optional[OccupancyGrid] = None
+        self._latest_target: Optional[PointStamped] = None
         self.get_logger().info('PathPlannerNode initialized.')
 
     # ----------------- TF Helper -----------------
@@ -218,6 +225,10 @@ class PathPlannerNode(Node):
 
     # ----------------- Callbacks -----------------
 
+    def _other_target(self, msg: PointStamped) -> None:
+        """Store the latest target point from the other robot"""
+        self._latest_target = msg
+
     def _on_frontier(self, msg: OccupancyGrid) -> None:
         """Store the latest frontier map (could be used by your planner)."""
         self._latest_frontier = msg
@@ -226,6 +237,7 @@ class PathPlannerNode(Node):
         """Trigger planning when a new map arrives."""
         self.map_frame = msg.header.frame_id
         self._latest_map = msg # keep latest map
+        if self._latest_frontier is None: return
 
         pose = self.get_robot_pose(target_frame=self.map_frame)
         if pose is None:
@@ -268,6 +280,7 @@ class PathPlannerNode(Node):
                 self.stopped = False
             return
         else:
+            self.publish_target(self.target)
             self.path_pub.publish(path)
             self.goal = (self.target[0], self.target[1])
             self.publish_time = self.get_clock().now()
@@ -333,7 +346,13 @@ class PathPlannerNode(Node):
         d = np.hypot(fx - start[0], fy - start[1])
         ang = np.arctan2(fy - start[1], fx - start[0]) - start[2]
         turn = abs(np.arctan2(np.sin(ang), np.cos(ang)))
+
         cost = self.distance_gain * d + self.yaw_gain * turn - self.cluster_gain * gain # Target gets picked by distance, turning needed and cluster size.
+        if self._latest_target is not None:
+            p = self.to_my_frame(self._latest_target)
+            if p is not None:
+                d_o = np.hypot(fx - p.point.x, fy - p.point.y)
+                cost += self.w_other * np.maximum(0, 1- d_o / self.r_other)
 
         now = self.get_clock().now()
         self.failed = [f for f in self.failed if now - f[2] < Duration(seconds=self.fail_timeout)]
@@ -368,32 +387,42 @@ class PathPlannerNode(Node):
                       ,max(col - radius, 0): min(col + radius + 1, w)]
         return np.any(window==100) # Check if any cell around the target is a valid frontier.
 
+    def publish_target(self,pt):
+        # publish target msg for other bot
+        explo = PointStamped()
+        explo.header.frame_id = self.map_frame
+        explo.header.stamp = self.get_clock().now().to_msg()
+        explo.point.x = pt[0]
+        explo.point.y = pt[1]
+        explo.point.z = 0.0
+        self.target_pub.publish(explo)
 
     def publish_marker(self, pt):
-            marker = Marker()
-            marker.header.frame_id = self.map_frame
-            marker.header.stamp = self.get_clock().now().to_msg()
+        # publish target for rviz
+        marker = Marker()
+        marker.header.frame_id = self.map_frame
+        marker.header.stamp = self.get_clock().now().to_msg()
 
-            marker.ns = 'goal_frontier'
-            marker.id = 0
-            marker.type = Marker.SPHERE
-            marker.action = Marker.ADD
+        marker.ns = 'goal_frontier'
+        marker.id = 0
+        marker.type = Marker.SPHERE
+        marker.action = Marker.ADD
 
-            marker.pose.position.x = float(pt[0])
-            marker.pose.position.y = float(pt[1])
-            marker.pose.position.z = 0.0
-            marker.pose.orientation.w = 1.0
+        marker.pose.position.x = float(pt[0])
+        marker.pose.position.y = float(pt[1])
+        marker.pose.position.z = 0.0
+        marker.pose.orientation.w = 1.0
 
-            marker.scale.x = 0.2
-            marker.scale.y = 0.2
-            marker.scale.z = 0.2
+        marker.scale.x = 0.2
+        marker.scale.y = 0.2
+        marker.scale.z = 0.2
 
-            marker.color.r = 1.0
-            marker.color.g = 0.0
-            marker.color.b = 0.0
-            marker.color.a = 1.0
+        marker.color.r = 1.0
+        marker.color.g = 0.0
+        marker.color.b = 0.0
+        marker.color.a = 1.0
 
-            self.publish(marker)
+        self.goal_pub.publish(marker)
 
 
     # ----------------- Planning -----------------

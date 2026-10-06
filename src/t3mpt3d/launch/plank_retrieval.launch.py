@@ -26,6 +26,7 @@ def generate_launch_description():
     use_lifecycle_manager = LaunchConfiguration('use_lifecycle_manager')
     use_sim_time = LaunchConfiguration('use_sim_time')
     slam_params_file = LaunchConfiguration('slam_params_file')
+    other_target_topic = LaunchConfiguration('other_target_topic')
 
     # 1. Declare Launch Arguments
     declare_namespace_cmd = DeclareLaunchArgument(
@@ -49,6 +50,10 @@ def generate_launch_description():
         default_value=os.path.join(share_dir, 'config', 'slam_config.yaml'),
         description='Full path to the ROS 2 parameters file to use for the slam_toolbox node')
 
+    declare_other_target_cmd = DeclareLaunchArgument(
+        'other_target_topic', default_value='other_target_topic',
+        description='Topic with the other robot\'s target (absolute, e.g. /tb3_1/my_target_topic)')
+
     # 2. Custom Nodes and RViz
     custom_nodes = GroupAction([
         PushRosNamespace(namespace),
@@ -59,18 +64,23 @@ def generate_launch_description():
         #     name='frontier_detector',
         #     parameters=[{'use_sim_time': use_sim_time}],
         # ),
-        # Node(
-        #     package='t3mpt3d',
-        #     executable='navigation_node',
-        #     name='navigation_node',
-        #     parameters=[{'use_sim_time': use_sim_time}],
-        # ),
-        # Node(
-        #     package='t3mpt3d',
-        #     executable='path_follower_node',
-        #     name='path_follower_node',
-        #     parameters=[{'use_sim_time': use_sim_time}],
-        # ),
+         Node(
+             package='t3mpt3d',
+             executable='navigation_node',
+             name='navigation_node',
+             parameters=[{'use_sim_time': use_sim_time,
+                        'base_frame': [namespace, '/base_footprint'],
+                        'other_target_topic': other_target_topic}],
+             remappings=[('map', '/map'), ('frontiers', '/frontiers')],
+             output='screen'
+         ),
+         Node(
+             package='t3mpt3d',
+             executable='path_follower_node',
+             name='path_follower_node',
+             parameters=[{'use_sim_time': use_sim_time,
+                          'base_frame': [namespace, '/base_footprint']}],
+         ),
         # Node(
         #     package='rviz2',
         #     executable='rviz2',
@@ -142,6 +152,7 @@ def generate_launch_description():
     # 5. Build and return the unified LaunchDescription
     ld = LaunchDescription()
 
+    ld.add_action(declare_other_target_cmd)
     ld.add_action(declare_namespace_cmd)
     ld.add_action(declare_autostart_cmd)
     ld.add_action(declare_use_lifecycle_manager)
