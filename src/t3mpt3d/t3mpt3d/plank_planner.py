@@ -75,8 +75,6 @@ class PathPlannerNode(Node):
         self.declare_parameter('tf_timeout_sec', 0.5)
 
         map_topic: str = self.get_parameter('map_topic').get_parameter_value().string_value
-        frontier_topic: str = self.get_parameter('frontier_topic').get_parameter_value().string_value
-        path_topic: str = self.get_parameter('path_topic').get_parameter_value().string_value
         self.global_frame: str = self.get_parameter('global_frame').get_parameter_value().string_value
         self.base_frame: str = self.get_parameter('base_frame').get_parameter_value().string_value
         self.tf_timeout = Duration(seconds=self.get_parameter('tf_timeout_sec').get_parameter_value().double_value)
@@ -151,7 +149,7 @@ class PathPlannerNode(Node):
 
         # RRT
         num_nodes = 2000
-        for it in range(num_nodes)
+        for it in range(num_nodes):
             r_x = np.random.uniform(origin_x, origin_x+map_width)
             r_y = np.random.uniform(origin_y, origin_y+map_height)
             random_pt = np.array([r_x, r_y], dtype=float)

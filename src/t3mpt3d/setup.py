@@ -40,6 +40,7 @@ setup(
 
           # ADDED: Make sure your other nodes are here too so Gazebo/SLAM can use them!
           'frontier_detector_node = t3mpt3d.frontier_detector_node:main',
+          'map_merge_node = t3mpt3d.multi_map_merge:main',
           'navigation_node = t3mpt3d.navigation_node:main',
           'path_follower_node = t3mpt3d.path_follower_node:main',
         ],

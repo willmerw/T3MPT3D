@@ -8,7 +8,7 @@ from std_msgs.msg import String
 from geometry_msgs.msg import TwistStamped, Pose, PoseStamped, Twist
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
 from nav_msgs.msg import Odometry, Path
-from visualization_msgs.msg import Marker
+from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Point
 import numpy as np
 import math
@@ -32,7 +32,7 @@ class PlankMPC(Node):
         self.plank_odom_pub = self.create_publisher(Odometry, '/plank_odom', 10)
         self.marker_pub = self.create_publisher(Marker, '/goal', vis_qos)
         self.path_pub = self.create_publisher(Path, '/path', vis_qos)
-        self.plank_path_pub = self.create_publisher(Marker, '/plank_path_vis', vis_qos) #Planks on the path
+        self.plank_path_pub = self.create_publisher(MarkerArray, '/plank_path_vis', vis_qos) #Planks on the path
 
         self.timer = self.create_timer(0.1, self.timer_callback)
 
@@ -51,7 +51,7 @@ class PlankMPC(Node):
 
         self.p1 = [0.0, 0.0, 0.0]
         self.p2 = [0.0, 0.0, 0.0]
-        self.spawn_offsets = ((0.0, 1.0), (0.0, 0.0))
+        self.spawn_offsets = ((-2.0, -0.5), (-2.0, 0.5))
 
         self.plank = [0.0, 0.0, 0.0, 0.0, -np.pi/2] #x,y,th1,th2,thp
 
@@ -66,9 +66,8 @@ class PlankMPC(Node):
         #self.yaw_desired = -np.pi/2
         self.yaw_desired = 0.0
 
-        self.path = [[2.0,2.0,0.0],[4.0,4.0,-np.pi/2],[0.0,0.0,-np.pi/2]]
+        self.path = [[-2.0,0.0,-np.pi/2],[1.0,1.0,0.0],[2.0,1.0,-np.pi/2],[2.0,3.0,-np.pi/2]]
         self.path_i=0
-        self.publish_plank_path()
         ts = 0.1
         N = 20 # Horizon
 
@@ -118,7 +117,8 @@ class PlankMPC(Node):
         px,py = pxy
 
         self.plank = px,py,th1,th2,thp
-        self.publish_plank(px,py,thp,self.plank_vis_pub)
+        marker = self.plank_marker(px,py,thp,1337)
+        self.plank_vis_pub.publish(marker)
         self.publish_plank_odom()
 
     def timer_callback(self):
@@ -129,7 +129,7 @@ class PlankMPC(Node):
             self.r1_pub.publish(stop_cmd)
             self.r2_pub.publish(stop_cmd)
             return
-
+        self.publish_plank_path()
         self.x_desired, self.y_desired, self.yaw_desired = self.path[self.path_i]
         d = np.linalg.norm(np.array([self.x_desired, self.y_desired]) - p0[:2])
 
@@ -152,7 +152,7 @@ class PlankMPC(Node):
         xp, yp = p0[:2].copy()
         self.traj.append([xp, yp])
         traj_msg = Path()
-        traj_msg.header.frame_id = 'map'
+        traj_msg.header.frame_id = 'world'
         for x,y in self.traj:
             pose = PoseStamped()
             pose.header = traj_msg.header
@@ -172,7 +172,7 @@ class PlankMPC(Node):
 
         path_msg = Path()
         path_msg.header.stamp = self.get_clock().now().to_msg()
-        path_msg.header.frame_id = 'map'
+        path_msg.header.frame_id = 'world'
 
         for x, y in zip(x_pred, y_pred):
             pose = PoseStamped()
@@ -199,16 +199,16 @@ class PlankMPC(Node):
         self.r1_pub.publish(r1_cmd)
         self.r2_pub.publish(r2_cmd)
 
-    def publish_plank(self,x,y,thp,publisher):
+    def plank_marker(self,x,y,thp,id):
         marker = Marker()
 
         # Frame and timestamp configuration
-        marker.header.frame_id = "map"
+        marker.header.frame_id = "world"
         marker.header.stamp = self.get_clock().now().to_msg()
 
         # Namespace and ID to identify the marker
         marker.ns = "lines"
-        marker.id = 0
+        marker.id = id
 
         # Type: LINE_STRIP connects points sequentially (0-1, 1-2, 2-3...)
         marker.type = Marker.LINE_STRIP
@@ -231,7 +231,7 @@ class PlankMPC(Node):
 
         marker.points = [pp1, pp2]
 
-        publisher.publish(marker)
+        return marker
 
     def publish_plank_odom(self):
         odom = Odometry()
@@ -254,7 +254,7 @@ class PlankMPC(Node):
         marker = Marker()
 
         # Frame and timestamp configuration
-        marker.header.frame_id = "map"
+        marker.header.frame_id = 'world'
         marker.header.stamp = self.get_clock().now().to_msg()
 
         # Unique namespace/ID pair (use a different ID or ns from the line marker)
@@ -286,15 +286,20 @@ class PlankMPC(Node):
 
     def publish_plank_path(self):
         path_msg = Path()
-        path_msg.header.frame_id = 'map'
-        for x,y,thp in self.path:
+        planks = MarkerArray()
+        path_msg.header.frame_id = 'world'
+        for i,(x,y,thp) in enumerate(self.path):
             pose = PoseStamped()
             pose.header = path_msg.header
             pose.pose.position.x = float(x)
             pose.pose.position.y = float(y)
             pose.pose.position.z = 0.0
             path_msg.poses.append(pose)
+            plank = self.plank_marker(x,y,thp,i)
+            plank.ns = "path_planks"
+            planks.markers.append(plank)
 
+        self.plank_path_pub.publish(planks)
         self.path_pub.publish(path_msg)
 
 

@@ -1,3 +1,4 @@
+
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -13,10 +14,10 @@ def generate_launch_description():
     t3mpt3d_pkg = get_package_share_directory('t3mpt3d')
 
     # Path to the Gazebo multi-launch file
-    gazebo_multi_launch = os.path.join(gazebo_pkg, 'launch', '/r7021e_v2/turtlebot3_simulations/turtlebot3_gazebo/launch/multi_robot_world.launch.py')
+    gazebo_multi_launch = os.path.join(gazebo_pkg, 'launch', '/project/turtlebot3_simulations/turtlebot3_gazebo/launch/multi_robot_world.launch.py')
 
     # Path to the SLAM/Nav launch file
-    slam_nav_launch = os.path.join(t3mpt3d_pkg, 'launch', '/r7021e_v2/project/T3MPT3D/src/t3mpt3d/launch/plank_retrieval.launch.py')
+    slam_nav_launch = os.path.join(t3mpt3d_pkg, 'launch', '/project/src/t3mpt3d/launch/plank_retrieval.launch.py')
 
     # --- INCLUDES ---
     simulation = IncludeLaunchDescription(
@@ -47,6 +48,14 @@ def generate_launch_description():
         package='t3mpt3d',                  # Replace with your package name
         executable='mission_control_node',      # Replace with your executable name
         name='mission_control',
+        output='screen',
+        parameters=[{'use_sim_time': True}] # Good practice if relying on Gazebo time
+    )
+
+    map_merge_node = Node(
+        package='t3mpt3d',                  # Replace with your package name
+        executable='map_merge_node',      # Replace with your executable name
+        name='map_merge',
         output='screen',
         parameters=[{'use_sim_time': True}] # Good practice if relying on Gazebo time
     )
@@ -82,6 +91,7 @@ def generate_launch_description():
         nav_tb3_1,
         nav_tb3_2,
         mission_node,
+        map_merge_node,
         tf_world_to_tb3_1, # <--- Added
         tf_world_to_tb3_2,  # <--- Added
         #pnk_node   # <--- Added here

@@ -36,7 +36,7 @@ class MultiMapMerge(Node):
         )
         self.ts.registerCallback(self.map_callback)
 
-        self.map_pub = self.create_publisher(OccupancyGrid, 'frontiers', 1)
+        self.map_pub = self.create_publisher(OccupancyGrid, 'map', 1)
         self.get_logger().info("Map Synchronizer and TF2 Listener started.")
 
     def map_callback(self, map1_msg: OccupancyGrid, map2_msg: OccupancyGrid):
