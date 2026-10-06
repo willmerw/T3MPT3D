@@ -98,6 +98,10 @@ class PointMPC(Node):
         model.set_variable(var_type='_tvp', var_name='other_x')
         model.set_variable(var_type='_tvp', var_name='other_y')
 
+        # Closest obstacle
+        model.set_variable(var_type='_tvp', var_name='obs_x')
+        model.set_variable(var_type='_tvp', var_name='obs_y')
+
         # Desired path
         model.set_variable('_tvp', 'ref_x')
         model.set_variable('_tvp', 'ref_y')
@@ -125,17 +129,11 @@ class PointMPC(Node):
         mpc.set_objective(mterm=mterm, lterm=lterm)
         mpc.set_rterm(vx=1e-2, vt=1e-2)
 
-        # State Bounds
-        mpc.bounds['lower','_x','x'] = -10.0
-        mpc.bounds['upper','_x','x'] =  10.0
-        mpc.bounds['lower','_x','y'] = -10.0
-        mpc.bounds['upper','_x','y'] =  10.0
-
         # Input Constraints
         mpc.bounds['lower','_u','vx'] = 0.0
-        mpc.bounds['upper','_u','vx'] =  0.5
-        mpc.bounds['lower','_u','vt'] = -0.8
-        mpc.bounds['upper','_u','vt'] =  0.8
+        mpc.bounds['upper','_u','vx'] =  0.2
+        mpc.bounds['lower','_u','vt'] = -0.5
+        mpc.bounds['upper','_u','vt'] =  0.5
 
 
         safe_distance = 0.3
@@ -147,6 +145,14 @@ class PointMPC(Node):
                 (model.x['y'] - model.tvp['other_y'])**2
             ),
             ub=0.0
+        )
+        
+        mpc.set_nl_cons(
+            'closest_obstacle',
+            0.1 ** 2 - ((model.x['x'] - model.tvp['obs_x']) ** 2 
+                        + (model.x['y'] - model.tvp['obs_y']) ** 2),
+            ub=0.0,
+            soft_constraint=False
         )
 
         tvp_template = mpc.get_tvp_template()
@@ -165,11 +171,16 @@ class PointMPC(Node):
 
             start_idx = self.closest_path_index(path, x, y)
 
+
             for k in range(N + 1):
 
                 # Other robot
                 tvp_template['_tvp', k, 'other_x'] = pred[k, 0]
                 tvp_template['_tvp', k, 'other_y'] = pred[k, 1]
+
+                # Closest obstacle
+                tvp_template['_tvp', k, 'obs_x'], 
+                tvp_template['_tvp', k, 'obs_y'] = self.closest_occupied(x, y, self.latest_map)
 
                 # Reference trajectory
                 if len(path) > 0:
@@ -194,8 +205,28 @@ class PointMPC(Node):
         ]
         return int(np.argmin(distances))
 
-    def closest_occupied(self):
-        pass
+    def closest_occupied(self, x, y, grid):
+        grid_array = np.array(grid.data).reshape(grid.info.height, grid.info.width)
+        check_distance = 20
+        mini_step = 1
+        closest_cell = None
+        closest = float('inf')
+        column = int((x - grid.info.origin.position.x) / grid.info.resolution)
+        row = int((y -grid.info.origin.position.y) / grid.info.resolution)
+        for i in np.arange(-check_distance, check_distance, mini_step):
+            for k in np.arange(-check_distance, check_distance, mini_step):
+                r = row + i
+                c = column + k
+                if (r < 0 or r >= grid.info.height or c < 0 or c >= grid.info.width):
+                    continue
+                if grid_array[r][c] == 100:
+                    dist = np.sqrt(i**2 + k**2)
+                    if dist < closest:
+                        closest = dist
+                        closest_cell = (r, c)
+        occ_x = grid.info.origin.position.x + closest_cell[0] * grid.info.resolution
+        occ_y = grid.info.origin.position.y + closest_cell[1] * grid.info.resolution
+        return occ_x, occ_y
 
     def odom_callback1(self, msg):
         self.x1 = msg.pose.pose.position.x
