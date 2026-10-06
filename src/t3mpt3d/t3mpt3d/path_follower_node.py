@@ -23,12 +23,14 @@ class PathFollower(Node):
         self.declare_parameter('max_w', 1.0)  # rad/s
         self.declare_parameter('kp_yaw', 2.0)
         self.declare_parameter('look_ahead', 0.2)  # m
+        self.declare_parameter('base_frame', 'base_footprint')
 
         self.max_v = float(self.get_parameter('max_v').value)
         self.kp_vel = float(self.get_parameter('kp_vel').value)
         self.max_w = float(self.get_parameter('max_w').value)
         self.kp_yaw = float(self.get_parameter('kp_yaw').value)
         self.look_ahead = float(self.get_parameter('look_ahead').value)
+        self.base_frame: str = self.get_parameter("base_frame").get_parameter_value().string_value
 
         # subscriptions and publishers
         self.map_sub = self.create_subscription(
@@ -51,17 +53,23 @@ class PathFollower(Node):
             self.path.append((point.pose.position.x, point.pose.position.y))
 
     def update_robot_pos(self):
-        ts: TransformStamped = self.buffer.lookup_transform(
-            'map',         # target frame
-            'base_link',   # source frame
-            rclpy.time.Time()
-        )
+        try:
+            ts: TransformStamped = self.buffer.lookup_transform(
+                self.path_header,         # target frame
+                self.base_frame,   # source frame
+                rclpy.time.Time()
+            )
+        except Exception as e:
+            self.get_logger().warn(f"TF {self.path_header} <- {self.base_frame} failed: {e}")
+            return False
 
         t = ts.transform.translation
         self.robot_pos = (t.x, t.y)
 
         q = ts.transform.rotation
         self.robot_yaw = self.yaw_from_quaternion(q.x, q.y, q.z, q.w)
+
+        return True
 
     def yaw_from_quaternion(self, x, y, z, w):
         siny_cosp = 2.0 * (w * z + x * y)
@@ -76,7 +84,8 @@ class PathFollower(Node):
         vel_msg.header.stamp= self.get_clock().now().to_msg()
         vel_msg.header.frame_id= self.path_header
 
-        self.update_robot_pos()
+        if not self.update_robot_pos():
+            return
 
         while len(self.path) > 1:
             if self.dist(self.path[0], self.robot_pos) > self.look_ahead:

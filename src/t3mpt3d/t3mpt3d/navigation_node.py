@@ -10,6 +10,7 @@ from rclpy.node import Node
 from rclpy.duration import Duration
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
+import tf2_geometry_msgs
 from geometry_msgs.msg import PoseStamped, Quaternion, Point
 from nav_msgs.msg import Path, OccupancyGrid
 from visualization_msgs.msg import Marker
@@ -101,7 +102,7 @@ class PathPlannerNode(Node):
         self.declare_parameter('frontier_topic', 'frontiers')
         self.declare_parameter('path_topic', 'path')
         self.declare_parameter("tree_topic", "RRTtree")
-        self.declare_parameter('global_frame', 'map')
+
         self.declare_parameter('base_frame', 'base_link')
         self.declare_parameter("goal_pub_topic", "goal_pub_topic")
         self.declare_parameter("goal_sub_topic", "goal_sub_topic")
@@ -120,7 +121,7 @@ class PathPlannerNode(Node):
         self.declare_parameter("cluster_gain", 0.02)
         self.declare_parameter("sticky_bonus", 0.5)
         self.declare_parameter("fail_timeout", 60.0)
-        self.declare_parameter("fail_raidus", 0.5)
+        self.declare_parameter("fail_radius", 0.5)
 
         map_topic: str = self.get_parameter('map_topic').get_parameter_value().string_value
         frontier_topic: str = self.get_parameter('frontier_topic').get_parameter_value().string_value
@@ -142,9 +143,9 @@ class PathPlannerNode(Node):
         self.cluster_gain: float = self.get_parameter("cluster_gain").get_parameter_value().double_value
         self.sticky_bonus: float = self.get_parameter("sticky_bonus").get_parameter_value().double_value
         self.fail_timeout: float = self.get_parameter("fail_timeout").get_parameter_value().double_value
-        self.fail_radius: float = self.get_parameter("fail_raidus").get_parameter_value().double_value
+        self.fail_radius: float = self.get_parameter("fail_radius").get_parameter_value().double_value
 
-        self.global_frame: str = self.get_parameter('global_frame').get_parameter_value().string_value
+
         self.base_frame: str = self.get_parameter('base_frame').get_parameter_value().string_value
         self.tf_timeout = Duration(seconds=self.get_parameter('tf_timeout_sec').get_parameter_value().double_value)
 
@@ -173,6 +174,7 @@ class PathPlannerNode(Node):
         self.goal = None
         self.target = None
         self.publish_time = None
+        self.map_frame = None
         self.blocked_frontier_counter = 0
 
         self.arrival_threshold = self.goal_radius * 1.2
@@ -191,13 +193,13 @@ class PathPlannerNode(Node):
 
     # ----------------- TF Helper -----------------
 
-    def get_robot_pose(self, target_frame: Optional[str] = None, source_frame: Optional[str] = None
+    def get_robot_pose(self, target_frame, source_frame: Optional[str] = None
                        ) -> Optional[Tuple[float, float, float]]:
         """
         Lookup TF to get robot pose (x, y, yaw) in target_frame.
         Returns None if not available within timeout.
         """
-        tgt = target_frame or self.global_frame
+        tgt = target_frame
         src = source_frame or self.base_frame
 
         try:
@@ -222,9 +224,10 @@ class PathPlannerNode(Node):
 
     def _on_map(self, msg: OccupancyGrid) -> None:
         """Trigger planning when a new map arrives."""
+        self.map_frame = msg.header.frame_id
         self._latest_map = msg # keep latest map
 
-        pose = self.get_robot_pose()
+        pose = self.get_robot_pose(target_frame=self.map_frame)
         if pose is None:
             return
 
@@ -272,6 +275,14 @@ class PathPlannerNode(Node):
 
 
     # ----------------- help functions -----------------
+    def to_my_frame(self, msg):
+        if self.map_frame is None: return None
+        try:
+            return self.tf_buffer.transform(msg, self.map_frame, timeout=Duration(seconds=0.1))
+        except Exception as e:
+            self.get_logger().warn(f"cannot transform {msg.header.frame_id} -> {self.map_frame}: {e}")
+            return None
+
     def distance(self,goal,x,y): # Calculats the distance between the goal and current position.
             goal_x, goal_y = goal[0], goal[1]
             x = goal_x - x
@@ -360,7 +371,7 @@ class PathPlannerNode(Node):
 
     def publish_marker(self, pt):
             marker = Marker()
-            marker.header.frame_id = 'map'
+            marker.header.frame_id = self.map_frame
             marker.header.stamp = self.get_clock().now().to_msg()
 
             marker.ns = 'goal_frontier'
@@ -382,7 +393,7 @@ class PathPlannerNode(Node):
             marker.color.b = 0.0
             marker.color.a = 1.0
 
-            self.pub_goal.publish(marker)
+            self.publish(marker)
 
 
     # ----------------- Planning -----------------
