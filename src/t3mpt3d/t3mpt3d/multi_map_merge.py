@@ -6,20 +6,17 @@ from rclpy.node import Node
 from nav_msgs.msg import OccupancyGrid
 import numpy as np
 import message_filters
-import cv2  # Needed for shifting the map array
+import cv2
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
-from tf2_ros import Buffer, TransformListener
-from tf2_ros import TransformException
+from tf2_ros import Buffer, TransformListener, TransformException
 
 class MultiMapMerge(Node):
     def __init__(self):
         super().__init__('multi_map_merge')
 
-        # 1. TF2 Setup to lookup frame differences
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
-        # 2. QoS Profile for Maps
         map_qos = QoSProfile(
             depth=1,
             durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
@@ -40,67 +37,72 @@ class MultiMapMerge(Node):
         self.get_logger().info("Map Synchronizer and TF2 Listener started.")
 
     def map_callback(self, map1_msg: OccupancyGrid, map2_msg: OccupancyGrid):
-        # 1. Get the frame IDs from the map messages
-        frame1 = map1_msg.header.frame_id
-        frame2 = map2_msg.header.frame_id
-
-        # 2. STRIP THE LEADING SLASH!
-        # ROS 2 TF2 will fail if frames start with '/'
-        if frame1.startswith('/'):
-            frame1 = frame1[1:]
-        if frame2.startswith('/'):
-            frame2 = frame2[1:]
+        frame1 = map1_msg.header.frame_id.lstrip('/')
+        frame2 = map2_msg.header.frame_id.lstrip('/')
 
         try:
-            # Lookup transform using the cleaned frame names (e.g. 'tb3_1/map')
-            t = self.tf_buffer.lookup_transform(
-                frame1,
-                frame2,
-                rclpy.time.Time() # Get the latest available transform
-            )
+            t = self.tf_buffer.lookup_transform(frame1, frame2, rclpy.time.Time())
         except TransformException as ex:
             self.get_logger().warn(f'Could not transform {frame2} to {frame1}: {ex}')
             return
 
-        # Extract map data
-        grid1 = np.array(map1_msg.data, dtype=np.int16).reshape((map1_msg.info.height, map1_msg.info.width))
-        grid2 = np.array(map2_msg.data, dtype=np.int16).reshape((map2_msg.info.height, map2_msg.info.width))
         res = map1_msg.info.resolution
 
-        # Calculate the real-world offset in meters
-        dx_meters = t.transform.translation.x + map2_msg.info.origin.position.x - map1_msg.info.origin.position.x
-        dy_meters = t.transform.translation.y + map2_msg.info.origin.position.y - map1_msg.info.origin.position.y
+        # 1. Global spatial boundaries for map 1 in frame1
+        m1_min_x = map1_msg.info.origin.position.x
+        m1_min_y = map1_msg.info.origin.position.y
+        m1_max_x = m1_min_x + map1_msg.info.width * res
+        m1_max_y = m1_min_y + map1_msg.info.height * res
 
-        # Convert meter offset to pixel/cell offset
-        dx_pixels = int(dx_meters / res)
-        dy_pixels = int(dy_meters / res)
+        # 2. Global spatial boundaries for map 2 transformed into frame1
+        m2_min_x = t.transform.translation.x + map2_msg.info.origin.position.x
+        m2_min_y = t.transform.translation.y + map2_msg.info.origin.position.y
+        m2_max_x = m2_min_x + map2_msg.info.width * res
+        m2_max_y = m2_min_y + map2_msg.info.height * res
 
-        # Transformation matrix for translation
-        M = np.float32([
-            [1, 0, dx_pixels],
-            [0, 1, dy_pixels]
-        ])
+        # 3. Compute union bounding box
+        union_min_x = min(m1_min_x, m2_min_x)
+        union_min_y = min(m1_min_y, m2_min_y)
+        union_max_x = max(m1_max_x, m2_max_x)
+        union_max_y = max(m1_max_y, m2_max_y)
 
-        # Warp grid2 to match grid1's dimensions and alignment
-        aligned_grid2 = cv2.warpAffine(
-            grid2,
-            M,
-            (map1_msg.info.width, map1_msg.info.height),
-            borderValue=-1
-        )
+        union_w = int(np.ceil((union_max_x - union_min_x) / res))
+        union_h = int(np.ceil((union_max_y - union_min_y) / res))
 
-        # Merge the grids
-        merge_grid = np.where(grid1 != -1, grid1, aligned_grid2)
+        # 4. Compute pixel translation vectors relative to the new origin
+        dx1_px = int(round((m1_min_x - union_min_x) / res))
+        dy1_px = int(round((m1_min_y - union_min_y) / res))
 
-        # Publish the merged map
+        dx2_px = int(round((m2_min_x - union_min_x) / res))
+        dy2_px = int(round((m2_min_y - union_min_y) / res))
+
+        # 5. Extract grid arrays
+        grid1 = np.array(map1_msg.data, dtype=np.int16).reshape((map1_msg.info.height, map1_msg.info.width))
+        grid2 = np.array(map2_msg.data, dtype=np.int16).reshape((map2_msg.info.height, map2_msg.info.width))
+
+        # 6. Warp both grids onto the unified dynamic canvas
+        M1 = np.float32([[1, 0, dx1_px], [0, 1, dy1_px]])
+        M2 = np.float32([[1, 0, dx2_px], [0, 1, dy2_px]])
+
+        aligned_g1 = cv2.warpAffine(grid1, M1, (union_w, union_h), borderValue=-1)
+        aligned_g2 = cv2.warpAffine(grid2, M2, (union_w, union_h), borderValue=-1)
+
+        # 7. Merge maps (prioritize known values over unknown -1)
+        merged = np.where(aligned_g1 != -1, aligned_g1, aligned_g2)
+
+        # 8. Construct output OccupancyGrid message
         out_msg = OccupancyGrid()
-        # Keep the exact same header the first map used, so other nodes recognize it
         out_msg.header = map1_msg.header
-        out_msg.info = map1_msg.info
-        out_msg.data = merge_grid.astype(np.int8).flatten().tolist()
+        out_msg.info.resolution = res
+        out_msg.info.width = union_w
+        out_msg.info.height = union_h
+        out_msg.info.origin.position.x = union_min_x
+        out_msg.info.origin.position.y = union_min_y
+        out_msg.info.origin.position.z = map1_msg.info.origin.position.z
+        out_msg.info.origin.orientation = map1_msg.info.origin.orientation
+        out_msg.data = merged.astype(np.int8).flatten().tolist()
 
         self.map_pub.publish(out_msg)
-        self.get_logger().info("Aligned and merged map published.")
 
 def main(args=None):
     rclpy.init(args=args)
