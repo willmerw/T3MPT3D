@@ -93,12 +93,11 @@ def generate_launch_description():
             'use_lifecycle_manager': use_lifecycle_manager,
             'use_sim_time': use_sim_time,
 
-            # --- ADD THESE 4 LINES ---
+            # These fix the TF frames (Internal math)
             'odom_frame': [namespace, '/odom'],
             'base_frame': [namespace, '/base_footprint'],
             'map_frame': [namespace, '/map'],
             'scan_topic': ['/', namespace, '/scan'],
-            # -------------------------
           }
         ],
         package='slam_toolbox',
@@ -106,10 +105,14 @@ def generate_launch_description():
         name='slam_toolbox',
         output='screen',
         namespace=namespace,
+        # --- UPDATE THIS SECTION ---
         remappings=[
+            ('/map', ['/', namespace, '/map']),
+            ('/map_metadata', ['/', namespace, '/map_metadata']),
             ('/tf', '/tf'),
             ('/tf_static', '/tf_static')
         ],
+        # ---------------------------
     )
     # 4. Lifecycle Events for SLAM
     configure_event = EmitEvent(
