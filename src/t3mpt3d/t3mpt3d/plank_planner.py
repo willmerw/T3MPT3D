@@ -66,44 +66,35 @@ class PathPlannerNode(Node):
     def __init__(self) -> None:
         super().__init__('path_planner_node')
 
-        # Parameters
-        self.declare_parameter('map_topic', 'map')
-        self.declare_parameter('frontier_topic', 'frontiers')
-        self.declare_parameter('path_topic', 'path')
-        self.declare_parameter('global_frame', 'map')
-        self.declare_parameter('base_frame', 'base_link')
-        self.declare_parameter('tf_timeout_sec', 0.5)
-
-        map_topic: str = self.get_parameter('map_topic').get_parameter_value().string_value
-        self.global_frame: str = self.get_parameter('global_frame').get_parameter_value().string_value
-        self.base_frame: str = self.get_parameter('base_frame').get_parameter_value().string_value
-        self.tf_timeout = Duration(seconds=self.get_parameter('tf_timeout_sec').get_parameter_value().double_value)
-
         default_qos = QoSProfile(depth=10)
 
-        self.start = None #DEFINE
-        self.plank_len = None #DEFINE
-        self.map = None #DEFINE
+        self.start = [-2.0,0.0,0.0,0.0,-np.pi/2] #DEFINE
+        self.plank_len = 1.0
+        self.goal = [1.5,0.0]
 
         self.node_max_dist = 0.2
         self.obs_fid = 0.01 #obstacle fidelity
         self.plank_twist = np.pi/10
         self.goal_radius = 0.2
-        self.map_inflation = 3
+        self.map_inflation = 0
 
-        self.tree = TreeNode([self.x,self.y], None)
+        x = self.start[0]
+        y = self.start[1]
+        self.tree = TreeNode([x,y], None)
         self.tree_pts = []
 
         self.goal_reached = True
 
-        self.path_pub = self.create_publisher(Path, 'path', 10)
+        self.path_pub = self.create_publisher(Path, 'exit_path', 10)
 
         self.tree_pub = self.create_publisher(Marker, 'rrt_tree', 10)
         self.inf_map_pub = self.create_publisher(OccupancyGrid, 'inf_map', 10)
-        self.upd_frontier_pub = self.create_publisher(OccupancyGrid, 'upd_frontiers', 10)
+        self.goal_pub = self.create_publisher(Marker, 'exit',10)
+        self.publish_goal(self.goal)
 
         # Subscribers
-        self.map_sub = self.create_subscription(OccupancyGrid, map_topic, self._on_map, default_qos)
+        self.map_received = False
+        self.map_sub = self.create_subscription(OccupancyGrid, '/map', self._on_map, default_qos)
 
         # TF
         self.tf_buffer = tf2_ros.Buffer(cache_time=Duration(seconds=10.0))
@@ -111,15 +102,22 @@ class PathPlannerNode(Node):
 
         # State
         self._latest_map: Optional[OccupancyGrid] = None
-        self._latest_frontier: Optional[OccupancyGrid] = None
         self.latest_path = None
 
         self.get_logger().info('PathPlannerNode initialized.')
 
+    def _on_map(self,map_msg):
+        if not self.map_received:
+            self.map_received = True
+            self.map = map_msg
+            self.plan_path(map_msg)
+
     def plan_path(self,
                   map_msg: OccupancyGrid):
 
-        map_msg, frontier_msg = self.inflate_map(map_msg,frontier_msg)
+        print("PLANNING PATH")
+
+        map_msg = self.inflate_map(map_msg)
 
         self.inf_map_pub.publish(map_msg)
 
@@ -128,24 +126,14 @@ class PathPlannerNode(Node):
         map_res = map_msg.info.resolution
         map_height = map_msg.info.height * map_res
         map_width = map_msg.info.width * map_res
-        map_values = map_msg.data
         origin_x = map_msg.info.origin.position.x
         origin_y = map_msg.info.origin.position.y
-        map_grid = np.array(map_msg.data, dtype=np.int16).reshape(
-            (map_msg.info.height, map_msg.info.width))
 
-        cell_x = int((x-origin_x)/map_res)
-        cell_y = int((y-origin_y)/map_res)
-        pos = np.array([x,y])
-
+        print(map_width,map_height,origin_x,origin_y)
         self.tree = TreeNode([x,y], None)
 
         self.tree_pts = []
         self.leaves = []
-
-        goal_pt = self.goal
-
-        self.publish_marker(goal_pt)
 
         # RRT
         num_nodes = 2000
@@ -158,38 +146,47 @@ class PathPlannerNode(Node):
             d = np.array(random_pt - closest_node.pt)
             d_norm = np.linalg.norm(d)
             border_pt = closest_node.pt + (d/d_norm)*self.node_max_dist
-            obs = self.check_obs(closest_node.pt,border_pt,map_msg)
+            obs = self.check_obs(closest_node.pt,random_pt,map_msg)
             if obs:
-                continue
+                pass
 
             if d_norm < self.node_max_dist:
                 new_node = TreeNode(pt=random_pt,parent=closest_node)
-                self.tree_pts.append((closest_node.pt,random_pt))
+
 
             else:
                 new_pt = border_pt
                 new_node = TreeNode(pt=new_pt,parent=closest_node)
-                self.tree_pts.append((closest_node.pt, new_pt))
+
+            self.tree_pts.append((closest_node.pt,new_node.pt))
+
+            closest_node.children.append(new_node)
 
             if closest_node in self.leaves:
                 self.leaves.remove(closest_node)
 
-            if np.linalg.norm(self.goal-new_node) < self.goal_radius:
+            if np.linalg.norm(np.array(self.goal)-np.array(new_node.pt)) < self.goal_radius:
                 self.leaves.append(new_node)
+
+        self.publish_tree(self.tree_pts)
 
         valid_pose_paths = []
         valid_paths = []
         r = self.plank_len/2
+
         for leaf in self.leaves:
             path = leaf.get_path_to_root()
-            poses = path[:].append(thp)
+            poses = []
+            for pt in path:
+                poses.append([pt[0],pt[1],thp])
 
             valid_path = True
-            for pose, pt in zip(poses,path):
+            for pt in path:
                 i = 0
                 v_yaw, nthp = self.valid_yaw_exists(pt,thp,r)
 
                 if v_yaw:
+                    poses = np.array(poses)
                     poses[i:,2] = nthp
                 else:
                     valid_path = False
@@ -199,14 +196,17 @@ class PathPlannerNode(Node):
             if valid_path:
                 valid_pose_paths.append(poses)
                 valid_paths.append(path)
-
-
+        print(f"DONE, Found {len(valid_paths)} valid paths")
+        print(len(self.tree_pts))
+        if len(valid_paths) < 1:
+            return
+        path = valid_paths[0]
         path_msg = Path()
-        path_msg.header.frame_id = 'map'
+        path_msg.header.frame_id = 'world'
         path_pt_ls = []
         for pt in path:
             path_pt = PoseStamped()
-            path_pt.header.frame_id = 'map'
+            path_pt.header.frame_id = 'world'
             path_pt.pose.position.x = pt[0]
             path_pt.pose.position.y = pt[1]
             path_pt_ls.append(path_pt)
@@ -216,7 +216,8 @@ class PathPlannerNode(Node):
         return path
 
     def valid_yaw_exists(self,pt,thp,r):
-        for inc in range(0,np.pi/2,self.plank_twist):
+        inc = 0
+        while inc < np.pi/2:
             nthp = thp+inc
             shift = np.array([np.cos(nthp)*r,np.sin(nthp)*r])
             pt1 = pt + shift
@@ -234,6 +235,8 @@ class PathPlannerNode(Node):
 
             if not obs:
                 return True, nthp
+            inc += self.plank_twist
+
 
         return False, None
 
@@ -260,36 +263,35 @@ class PathPlannerNode(Node):
         return obs
 
     def publish_tree(self, tree_edges):
-
-            marker = Marker()
-            marker.header.frame_id = "map"
-            marker.header.stamp = self.get_clock().now().to_msg()
-            marker.ns = "rrt_tree"
-            marker.id = 0
-            marker.type = Marker.LINE_LIST
-            marker.action = Marker.ADD
-
-            marker.scale.x = 0.02
-            marker.color.r = 0.0
-            marker.color.g = 1.0
-            marker.color.b = 0.0
-            marker.color.a = 1.0
-
-            for parent, child in tree_edges:
-                p_start = Point(x=float(parent[0]), y=float(parent[1]), z=0.0)
-                p_end = Point(x=float(child[0]), y=float(child[1]), z=0.0)
-                marker.points.append(p_start)
-                marker.points.append(p_end)
-
-            self.tree_pub.publish(marker)
-
-    def publish_marker(self, pt):
         marker = Marker()
-        marker.header.frame_id = 'map'
+        marker.header.frame_id = 'world'
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = "rrt_tree"
+        marker.id = 0
+        marker.type = Marker.LINE_LIST
+        marker.action = Marker.ADD
+
+        marker.scale.x = 0.02
+        marker.color.r = 0.0
+        marker.color.g = 1.0
+        marker.color.b = 0.0
+        marker.color.a = 1.0
+
+        for parent, child in tree_edges:
+            p_start = Point(x=float(parent[0]), y=float(parent[1]), z=0.0)
+            p_end = Point(x=float(child[0]), y=float(child[1]), z=0.0)
+            marker.points.append(p_start)
+            marker.points.append(p_end)
+
+        self.tree_pub.publish(marker)
+
+    def publish_goal(self, pt):
+        marker = Marker()
+        marker.header.frame_id = 'world'
         marker.header.stamp = self.get_clock().now().to_msg()
 
-        marker.ns = 'goal_frontier'
-        marker.id = 0
+        marker.ns = 'exit'
+        marker.id = 420
         marker.type = Marker.SPHERE
         marker.action = Marker.ADD
 
@@ -307,7 +309,7 @@ class PathPlannerNode(Node):
         marker.color.b = 0.0
         marker.color.a = 1.0
 
-        self.goal_frontier_pub.publish(marker)
+        self.goal_pub.publish(marker)
 
     def optimize_path(self, path, map_msg):
         i = 0
@@ -363,12 +365,10 @@ class PathPlannerNode(Node):
 
         return path
 
-    def inflate_map(self,map_msg, frontier_msg):
+    def inflate_map(self,map_msg):
         map_grid = np.array(map_msg.data, dtype=np.int16).reshape(
         (map_msg.info.height, map_msg.info.width))
 
-        frontier_grid = np.array(frontier_msg.data, dtype=np.int16).reshape(
-        (frontier_msg.info.height, frontier_msg.info.width))
 
         rows, cols = np.where(map_grid >= 50)
 
@@ -380,16 +380,9 @@ class PathPlannerNode(Node):
                         map_grid[row+i][col+j] = 100
                     except Exception as e:
                         continue
-            infl = infl+2
-            for i in range(-infl,infl):
-                for j in range(-infl,infl):
-                    try:
-                        frontier_grid[row+i][col+j] = 0
-                    except Exception as e:
-                        continue
+
         map_msg.data = map_grid.ravel().tolist()
-        frontier_msg.data = frontier_grid.ravel().tolist()
-        return map_msg, frontier_msg
+        return map_msg
 
 
 def main() -> None:
