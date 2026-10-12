@@ -72,7 +72,7 @@ class PathPlannerNode(Node):
             durability=DurabilityPolicy.TRANSIENT_LOCAL
         )
 
-        self.start = [-1.5,0.0,0.0,0.0,-np.pi/2] #DEFINE
+        self.start = [-1.5,0.0,0.0,0.0,-np.pi/2]
         self.r = 1.0/2 # Plank radius
         self.goal = [2.0,0.0]
         self.pose_path = []
@@ -124,6 +124,7 @@ class PathPlannerNode(Node):
         self.inf_map_pub.publish(map_msg)
         map_msg.info.origin.position.x -= 2.0
         map_msg.info.origin.position.y -= 0.5
+        print(map_msg.header.frame_id)
 
 
 
