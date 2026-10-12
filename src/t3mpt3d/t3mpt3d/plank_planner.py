@@ -8,8 +8,9 @@ from rclpy.node import Node
 from rclpy.duration import Duration
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
-from geometry_msgs.msg import PoseStamped, Quaternion,Point
+from geometry_msgs.msg import PoseStamped, Quaternion,Point,PolygonStamped
 from nav_msgs.msg import Path, OccupancyGrid
+from std_msgs.msg import Bool
 from builtin_interfaces.msg import Time as TimeMsg
 from rclpy.time import Time
 from visualization_msgs.msg import Marker, MarkerArray
@@ -72,9 +73,9 @@ class PathPlannerNode(Node):
             durability=DurabilityPolicy.TRANSIENT_LOCAL
         )
 
-        self.start = [-1.5,0.0,0.0,0.0,-np.pi/2]
-        self.r = 1.0/2 # Plank radius
-        self.goal = [2.0,0.0]
+        self.start = [0.0,0.0,0.0] #x,y,th1,th2,thp
+        self.r = 0.0 # Plank radius
+        self.goal = [0.0,0.0] #x,y
         self.pose_path = []
 
         self.node_max_dist = 0.2
@@ -90,23 +91,35 @@ class PathPlannerNode(Node):
 
         self.goal_reached = True
 
-        self.path_pub = self.create_publisher(Path, 'exit_path', transient_qos)
+        self.path_pub = self.create_publisher(Path, '/path', transient_qos)
 
         self.tree_pub = self.create_publisher(Marker, 'rrt_tree', 10)
         self.inf_map_pub = self.create_publisher(OccupancyGrid, 'inf_map', 10)
-        self.goal_pub = self.create_publisher(Marker, '/exit',transient_qos)
+        self.goal_pub_vis = self.create_publisher(Marker, '/exit',transient_qos)
         self.plank_path_pub = self.create_publisher(MarkerArray, '/plank_path_vis', transient_qos) #Planks on the path
+
+        #HARRYS FLAGGOR
+        self.start = False
+        self.start_sub = self.create_subscription(Bool, '/rivstart',self._on_start,10)
 
 
         # Subscribers
         self.map_received = False
         self.map_sub = self.create_subscription(OccupancyGrid, '/map', self._on_map, default_qos)
 
+        self.plank_received = False
+        self.plank_sub = self.create_subscription(PolygonStamped, '/plank', self._on_plank, default_qos)
+
+        self.goal_received = False
+        self.goal_sub = self.create_subscription(PoseStamped, '/goal', self._on_goal, default_qos)
+
         # State
         self._latest_map: Optional[OccupancyGrid] = None
-        self.latest_path = None
 
         self.get_logger().info('PathPlannerNode initialized.')
+
+    def _on_start(self,start_msg):
+        self.start = start_msg.data
 
     def _on_map(self,map_msg):
         if not self.map_received:
@@ -115,8 +128,37 @@ class PathPlannerNode(Node):
             self.publish_goal(self.goal)
             self.plan_path(map_msg)
 
-    def plan_path(self,
-                  map_msg: OccupancyGrid):
+    def _on_plank(self,plank_msg):
+        if not self.plank_received:
+            self.plank_received = True
+            pt1 = plank_msg.polygon.points[0][:2]
+            pt2 = plank_msg.polygon.points[1][:2]
+            d = pt2-pt1
+            self.r = np.linalg.norm(d)/2
+            thp = np.atan2(d[1],d[0])
+            pt = pt1 + d/2
+            x = pt[0]
+            y = pt[1]
+            self.start[x,y,thp]
+
+
+    def _on_goal(self,goal_msg):
+        if not self.received_goal:
+            self.goal_received = True
+            x = goal_msg.pose.position.x
+            y = goal_msg.pose.position.y
+            self.goal[x,y]
+
+
+    def plan_path(self,map_msg: OccupancyGrid):
+        if not self.start:
+            return
+
+        if not self.plank_received:
+            return
+
+        if not self.received_goal:
+            return
 
         print("PLANNING PATH")
 
@@ -124,10 +166,7 @@ class PathPlannerNode(Node):
         self.inf_map_pub.publish(map_msg)
         print(map_msg.header.frame_id)
 
-
-
-
-        x,y,th1,th2,thp = self.start
+        x,y,thp = self.start
 
         map_res = map_msg.info.resolution
         map_height = map_msg.info.height * map_res
@@ -392,7 +431,7 @@ class PathPlannerNode(Node):
         marker.color.b = 0.0
         marker.color.a = 1.0
 
-        self.goal_pub.publish(marker)
+        self.goal_pub_vis.publish(marker)
 
     def optimize_path(self, path, map_msg):
         i = 0

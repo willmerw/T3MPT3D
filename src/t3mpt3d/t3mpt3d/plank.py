@@ -4,8 +4,8 @@ import casadi as ca
 from casadi import vertcat, horzcat, DM # Importing specific functions from casadi for symbolic mathematics
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String
-from geometry_msgs.msg import TwistStamped, Pose, PoseStamped, Twist
+from std_msgs.msg import String, Bool
+from geometry_msgs.msg import TwistStamped,PoseStamped,PolygonStamped
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
 from nav_msgs.msg import Odometry, Path
 from visualization_msgs.msg import Marker, MarkerArray
@@ -27,18 +27,26 @@ class PlankMPC(Node):
                 )
 
 
-        self.r1_pub = self.create_publisher(Twist, '/tb3_1/cmd_vel', 10)
-        self.r2_pub = self.create_publisher(Twist, '/tb3_2/cmd_vel', 10)
+        self.r1_pub = self.create_publisher(TwistStamped, '/tb3_1/cmd_vel', 10)
+        self.r2_pub = self.create_publisher(TwistStamped, '/tb3_2/cmd_vel', 10)
         self.mpc_traj_publisher = self.create_publisher(Path, '/mpc_trajectory', 10)
         self.traj_publisher = self.create_publisher(Path, '/trajectory', 10)
         self.plank_vis_pub = self.create_publisher(Marker, '/plank_vis', vis_qos)
         self.plank_odom_pub = self.create_publisher(Odometry, '/plank_odom', 10)
-        self.marker_pub = self.create_publisher(Marker, '/goal', vis_qos)
+        self.marker_pub = self.create_publisher(Marker, '/plank_goal_vis', vis_qos)
 
         self.timer = self.create_timer(0.1, self.timer_callback)
 
+        # FLAGS
         self.path_received = False
         self.map_sub = self.create_subscription(Path, '/path', self._on_path, 10)
+
+        self.plank_received = False
+        self.plank_sub = self.create_subscription(PolygonStamped, '/plank', self._on_plank, 10)
+
+        # HARRYS FLAGGOR
+        self.start = False
+        self.start_sub = self.create_subscription(Bool, '/rivstart',self._on_start,10)
 
         self.odom1_sub = message_filters.Subscriber(
             self, Odometry, '/tb3_1/odom_world',10
@@ -54,9 +62,13 @@ class PlankMPC(Node):
         self.p1 = [0.0, 0.0, 0.0]
         self.p2 = [0.0, 0.0, 0.0]
 
-        self.plank = [0.0, 0.0, 0.0, 0.0, -np.pi/2] #x,y,th1,th2,thp
+        self.x_desired = 0.0
+        self.y_desired = 0.0
+        self.yaw_desired = 0.0
 
-        self.r = 0.5
+        self.plank = [0.0, 0.0, 0.0, 0.0, 0.0] #x,y,th1,th2,thp
+
+        self.r = 0.0
         self.traj = []
 
         self.model = definePlankModel()
@@ -81,6 +93,9 @@ class PlankMPC(Node):
         self.mpc.set_tvp_fun(tvp_fun)
         self.mpc.setup()
 
+    def _on_start(self,start_msg):
+        self.start = start_msg.data
+
     def _on_path(self,path_msg):
         if self.received_path:
             return
@@ -96,8 +111,17 @@ class PlankMPC(Node):
             self.poses.append([x,y,yaw])
         self.received_path = True
 
-    def odom_callback(self, odom1_msg: Odometry, odom2_msg: Odometry):
+    def _on_plank(self,plank_msg):
+        if not self.plank_received:
+            self.plank_received = True
+            pt1 = plank_msg.polygon.points[0][:2]
+            pt2 = plank_msg.polygon.points[1][:2]
+            d = pt2-pt1
+            self.r = np.linalg.norm(d)/2
 
+    def odom_callback(self, odom1_msg: Odometry, odom2_msg: Odometry):
+        if not self.start:
+            return
 
         self.p1[0] = odom1_msg.pose.pose.position.x
         self.p1[1] = odom1_msg.pose.pose.position.y
@@ -132,21 +156,25 @@ class PlankMPC(Node):
         self.publish_plank_odom()
 
     def timer_callback(self):
+        if not self.start:
+            return
         p0 = np.array(self.plank)
 
         if self.path_i >= len(self.path):
-            stop_cmd = Twist()
+            stop_cmd = TwistStamped()
             self.r1_pub.publish(stop_cmd)
             self.r2_pub.publish(stop_cmd)
             return
-        #self.publish_plank_path()
+
+
+
         self.x_desired, self.y_desired, self.yaw_desired = self.path[self.path_i]
         d = np.linalg.norm(np.array([self.x_desired, self.y_desired]) - p0[:2])
 
         if d < 0.1:
             self.path_i += 1
             if self.path_i >= len(self.path):
-                stop_cmd = Twist()
+                stop_cmd = TwistStamped()
                 self.r1_pub.publish(stop_cmd)
                 self.r2_pub.publish(stop_cmd)
                 return
@@ -192,18 +220,18 @@ class PlankMPC(Node):
             path_msg.poses.append(pose)
         self.mpc_traj_publisher.publish(path_msg)
 
-        r1_cmd = Twist()
-        r2_cmd = Twist()
+        r1_cmd = TwistStamped()
+        r2_cmd = TwistStamped()
 
         v1 = u[0][0]
         v2 = u[1][0]
         vth1 = u[2][0]
         vth2 = u[3][0]
-        r1_cmd.linear.x = v1
-        r1_cmd.angular.z = vth1
+        r1_cmd.twist.linear.x = v1
+        r1_cmd.twist.angular.z = vth1
 
-        r2_cmd.linear.x = v2
-        r2_cmd.angular.z = vth2
+        r2_cmd.twist.linear.x = v2
+        r2_cmd.twist.angular.z = vth2
 
 
         self.r1_pub.publish(r1_cmd)
