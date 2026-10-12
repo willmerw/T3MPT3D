@@ -12,7 +12,7 @@ from geometry_msgs.msg import PoseStamped, Quaternion,Point
 from nav_msgs.msg import Path, OccupancyGrid
 from builtin_interfaces.msg import Time as TimeMsg
 from rclpy.time import Time
-from visualization_msgs.msg import Marker
+from visualization_msgs.msg import Marker, MarkerArray
 
 import tf2_ros
 import numpy as np
@@ -67,16 +67,21 @@ class PathPlannerNode(Node):
         super().__init__('path_planner_node')
 
         default_qos = QoSProfile(depth=10)
+        transient_qos = QoSProfile(
+            depth=10,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL
+        )
 
-        self.start = [-2.0,0.0,0.0,0.0,-np.pi/2] #DEFINE
-        self.plank_len = 1.0
-        self.goal = [1.5,0.0]
+        self.start = [-1.5,0.0,0.0,0.0,-np.pi/2] #DEFINE
+        self.r = 1.0/2 # Plank radius
+        self.goal = [2.0,0.0]
+        self.pose_path = []
 
         self.node_max_dist = 0.2
         self.obs_fid = 0.01 #obstacle fidelity
         self.plank_twist = np.pi/10
         self.goal_radius = 0.2
-        self.map_inflation = 2
+        self.map_inflation = 3
 
         x = self.start[0]
         y = self.start[1]
@@ -85,12 +90,13 @@ class PathPlannerNode(Node):
 
         self.goal_reached = True
 
-        self.path_pub = self.create_publisher(Path, 'exit_path', 10)
+        self.path_pub = self.create_publisher(Path, 'exit_path', transient_qos)
 
         self.tree_pub = self.create_publisher(Marker, 'rrt_tree', 10)
         self.inf_map_pub = self.create_publisher(OccupancyGrid, 'inf_map', 10)
-        self.goal_pub = self.create_publisher(Marker, 'exit',10)
-        self.publish_goal(self.goal)
+        self.goal_pub = self.create_publisher(Marker, '/exit',transient_qos)
+        self.plank_path_pub = self.create_publisher(MarkerArray, '/plank_path_vis', transient_qos) #Planks on the path
+
 
         # Subscribers
         self.map_received = False
@@ -106,6 +112,7 @@ class PathPlannerNode(Node):
         if not self.map_received:
             self.map_received = True
             self.map = map_msg
+            self.publish_goal(self.goal)
             self.plan_path(map_msg)
 
     def plan_path(self,
@@ -114,11 +121,12 @@ class PathPlannerNode(Node):
         print("PLANNING PATH")
 
         map_msg = self.inflate_map(map_msg)
+        self.inf_map_pub.publish(map_msg)
         map_msg.info.origin.position.x -= 2.0
         map_msg.info.origin.position.y -= 0.5
 
 
-        self.inf_map_pub.publish(map_msg)
+
 
         x,y,th1,th2,thp = self.start
 
@@ -135,7 +143,7 @@ class PathPlannerNode(Node):
         self.leaves = []
 
         # RRT
-        num_nodes = 2000
+        num_nodes = 1000
         for it in range(num_nodes):
 
             r_x = np.random.uniform(origin_x, origin_x+map_width)
@@ -175,7 +183,7 @@ class PathPlannerNode(Node):
 
         valid_pose_paths = []
         valid_paths = []
-        r = self.plank_len/2
+        r = self.r
 
         for leaf in self.leaves:
             path = leaf.get_path_to_root()
@@ -184,9 +192,11 @@ class PathPlannerNode(Node):
                 poses.append([pt[0],pt[1],thp])
 
             valid_path = True
+            i = 0
+            nthp =thp
             for pt in path:
-                i = 0
-                v_yaw, nthp = self.valid_yaw_exists(pt,thp,r)
+
+                v_yaw, nthp = self.valid_yaw_exists(pt,nthp,r)
 
                 if v_yaw:
                     poses = np.array(poses)
@@ -200,10 +210,15 @@ class PathPlannerNode(Node):
                 valid_pose_paths.append(poses)
                 valid_paths.append(path)
         print(f"DONE, Found {len(valid_paths)} valid paths")
-        print(len(self.tree_pts))
+
         if len(valid_paths) < 1:
             return
-        path = valid_paths[0]
+
+        best_path, best_pose_path = self.evaluate_valid_paths(valid_paths,valid_pose_paths)
+        path = best_path
+        self.pose_path = best_pose_path
+        print(self.pose_path)
+        self.publish_plank_path()
         path_msg = Path()
         path_msg.header.frame_id = 'world'
         path_pt_ls = []
@@ -212,11 +227,77 @@ class PathPlannerNode(Node):
             path_pt.header.frame_id = 'world'
             path_pt.pose.position.x = pt[0]
             path_pt.pose.position.y = pt[1]
+            path_pt.pose.orientation.w = 1.0
             path_pt_ls.append(path_pt)
         path_msg.poses = path_pt_ls
         self.path_pub.publish(path_msg)
 
         return path
+
+    def evaluate_valid_paths(self,paths,pose_paths):
+        scores = []
+        d_w = 1.0
+        yaw_w = 1.0
+        for path,pose_path in zip(paths,pose_paths):
+            score = 0
+            for i in range(1,len(pose_path)):
+                yaw = pose_path[i][2]
+                prev_yaw = pose_path[i-1][2]
+                pt = np.array(path[i])
+                prev_pt = np.array(path[i-1])
+                d = np.linalg.norm(pt-prev_pt)
+                d_yaw = np.abs(yaw-prev_yaw)
+
+                score = score + d_w*d + yaw_w*d_yaw
+            scores.append(score)
+
+        best_i = np.argmin(scores)
+        return paths[best_i], pose_paths[best_i]
+
+
+    def publish_plank_path(self):
+        planks = MarkerArray()
+        #planks.header.frame_id = 'world'
+        for i,(x,y,thp) in enumerate(self.pose_path):
+            plank = self.plank_marker(x,y,thp,i)
+            plank.ns = "path_planks"
+            planks.markers.append(plank)
+
+        self.plank_path_pub.publish(planks)
+
+    def plank_marker(self,x,y,thp,id):
+            marker = Marker()
+
+            # Frame and timestamp configuration
+            marker.header.frame_id = "world"
+            marker.header.stamp = self.get_clock().now().to_msg()
+
+            # Namespace and ID to identify the marker
+            marker.ns = "lines"
+            marker.id = id
+
+            # Type: LINE_STRIP connects points sequentially (0-1, 1-2, 2-3...)
+            marker.type = Marker.LINE_STRIP
+            marker.action = Marker.ADD
+
+            # Scale: scale.x controls the line thickness (in meters)
+            marker.scale.x = 0.05
+
+            # Color and Alpha (opacity) - Alpha must be > 0 to be visible
+            marker.color.r = 1.0
+            marker.color.g = 0.0
+            marker.color.b = 0.0
+            marker.color.a = 1.0
+
+            shift = np.array([np.cos(thp),np.sin(thp)]) * self.r
+            p1 = np.array([x,y]) + shift
+            p2 = np.array([x,y]) - shift
+            pp1 = Point(x=p1[0], y=p1[1], z=0.0)
+            pp2 = Point(x=p2[0], y=p2[1], z=0.0)
+
+            marker.points = [pp1, pp2]
+
+            return marker
 
     def valid_yaw_exists(self,pt,thp,r):
         inc = 0
@@ -294,7 +375,7 @@ class PathPlannerNode(Node):
         marker.header.stamp = self.get_clock().now().to_msg()
 
         marker.ns = 'exit'
-        marker.id = 420
+        marker.id = 40
         marker.type = Marker.SPHERE
         marker.action = Marker.ADD
 

@@ -17,6 +17,9 @@ class PlankMPC(Node):
     def __init__(self):
         super().__init__('turtle_mpc_node')
 
+        self.declare_parameter('base_frame', 'base_link')
+        self.base_frame: str = self.get_parameter('base_frame').get_parameter_value().string_value
+
         vis_qos = QoSProfile(
                     depth=1,
                     durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -84,8 +87,31 @@ class PlankMPC(Node):
         self.mpc.set_tvp_fun(tvp_fun)
         self.mpc.setup()
 
+    def get_robot_pose(self, target_frame, source_frame=None):
+            """
+            Lookup TF to get robot pose (x, y, yaw) in target_frame.
+            Returns None if not available within timeout.
+            """
+            tgt = target_frame
+            src = source_frame or self.base_frame
+
+            try:
+                transform = self.tf_buffer.lookup_transform(
+                    tgt, src, Time(), timeout=self.tf_timeout
+                )
+            except Exception as e:
+                self.get_logger().warn(f'TF lookup {tgt} <- {src} failed: {e}')
+                return None
+
+            t = transform.transform.translation
+            r = transform.transform.rotation
+            yaw = quat_to_yaw(r)
+
+            return (t.x, t.y, yaw)
+
 
     def odom_callback(self, odom1_msg: Odometry, odom2_msg: Odometry):
+
         offset1_x, offset1_y = self.spawn_offsets[0]
         offset2_x, offset2_y = self.spawn_offsets[1]
 
