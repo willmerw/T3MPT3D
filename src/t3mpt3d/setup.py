@@ -44,9 +44,9 @@ setup(
           'navigation_node = t3mpt3d.navigation_node:main',
           'path_follower_node = t3mpt3d.path_follower_node:main',
           'path_mpc = t3mpt3d.path_mpc:main',
-          'odom_to_world_node = odom_to_world_node:main',
-          'plank_planner_node = plank_planner:main',
-          'plank_node = plank:main'
+          'odom_to_world_node = t3mpt3d.odom_to_world_node:main',
+          'plank_planner_node = t3mpt3d.plank_planner:main',
+          'plank_node = t3mpt3d.plank:main',
         ],
     },
 )

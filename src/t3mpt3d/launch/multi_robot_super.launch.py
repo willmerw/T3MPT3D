@@ -68,6 +68,12 @@ def generate_launch_description():
           parameters=[{'use_sim_time': True}],
         )
 
+    odom_to_world = Node(
+        package='t3mpt3d',
+        executable='odom_to_world_node',
+        name='odom_to_world_node',
+        parameters=[{'use_sim_time': True}]
+    )
     pnk_node = Node(
             package='t3mpt3d',                  # Replace with your package name
             executable='plank_node',      # Replace with your executable name
@@ -81,7 +87,7 @@ def generate_launch_description():
         executable='static_transform_publisher',
         name='static_tf_tb3_1',
         # Removed --x, --y, etc. Just pure numbers in order: X, Y, Z, Yaw, Pitch, Roll, Parent, Child
-        arguments=['-2.0', '-0.5', '0.0', '0.0', '0.0', '0.0', 'world', 'tb3_1/map'],
+        arguments=['0.0', '0.0', '0.0', '0.0', '0.0', '0.0', 'world', 'tb3_1/map'], #ALWAYS (0,0)
         parameters=[{'use_sim_time': True}]
     )
 
@@ -90,7 +96,7 @@ def generate_launch_description():
         package='tf2_ros',
         executable='static_transform_publisher',
         name='static_tf_tb3_2',
-        arguments=['-2.0', '0.5', '0.0', '0.0', '0.0', '0.0', 'world', 'tb3_2/map'],
+        arguments=['0.0', '1.0', '0.0', '0.0', '0.0', '0.0', 'world', 'tb3_2/map'],
         parameters=[{'use_sim_time': True}]
     )
 
@@ -104,5 +110,6 @@ def generate_launch_description():
         tf_world_to_tb3_1, # <--- Added
         tf_world_to_tb3_2,  # <--- Added
         frontier_detector,
+        odom_to_world
         #pnk_node   # <--- Added here
     ])
