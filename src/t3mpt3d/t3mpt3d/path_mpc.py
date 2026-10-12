@@ -1,5 +1,4 @@
 import do_mpc # Importing the MPC library
-
 import casadi as ca
 from casadi import vertcat, horzcat, DM # Importing specific functions from casadi for symbolic mathematics
 import rclpy
@@ -10,7 +9,7 @@ from nav_msgs.msg import Odometry, Path, OccupancyGrid
 import numpy as np
 import math
 
-class PointMPC(Node):
+class PathMPC(Node):
     def __init__(self):
         super().__init__('turtle_mpc_node')
 
@@ -18,7 +17,8 @@ class PointMPC(Node):
         self.cmd_vel_publisher2 = self.create_publisher(TwistStamped, '/tb3_2/cmd_vel', 10)
         self.mpc_traj_publisher1 = self.create_publisher(Path, '/tb3_1/mpc_trajectory', 10)
         self.mpc_traj_publisher2 = self.create_publisher(Path, '/tb3_2/mpc_trajectory', 10)
-        self.traj_publisher = self.create_publisher(Path, '/trajectory', 10)
+        self.path_publisher1 = self.create_publisher(Path, '/tb3_1/path', 10)
+        self.path_publisher2 = self.create_publisher(Path, '/tb3_2/path', 10)
 
         self.timer = self.create_timer(0.1, self.timer_callback)
 
@@ -247,6 +247,7 @@ class PointMPC(Node):
             2.0 * (q.w * q.z + q.x * q.y),
             1.0 - 2.0 * (q.y * q.y + q.z * q.z)
         )
+        
 
     def found_goal_callback1(self, msg):
         if msg.data:
@@ -308,7 +309,7 @@ class PointMPC(Node):
                 pose.pose.position.z = 0.0
                 traj_msg.poses.append(pose)
 
-            self.mpc_traj_publisher1.publish(traj_msg)
+            self.path_publisher1.publish(traj_msg)
 
             u = self.mpc1.make_step(p)
 
@@ -358,7 +359,7 @@ class PointMPC(Node):
                 pose.pose.position.z = 0.0
                 traj_msg.poses.append(pose)
 
-            self.mpc_traj_publisher2.publish(traj_msg)
+            self.path_publisher2.publish(traj_msg)
 
             u = self.mpc2.make_step(p)
 
@@ -385,7 +386,7 @@ class PointMPC(Node):
 
 def main(): # Main Function
     rclpy.init()
-    node = PointMPC()
+    node = PathMPC()
     rclpy.spin(node) # Keep the node alive and runnings.
     node.destroy_node() # Destroy the node after completion (typically when exited).
     rclpy.shutdown() # Shutdown the ros client on interruption.
