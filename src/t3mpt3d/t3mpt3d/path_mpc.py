@@ -22,8 +22,8 @@ class PathMPC(Node):
 
         self.timer = self.create_timer(0.1, self.timer_callback)
 
-        self.create_subscription(Odometry, '/tb3_1/odom', self.odom_callback1, 10)
-        self.create_subscription(Odometry, '/tb3_2/odom', self.odom_callback2, 10)
+        self.create_subscription(Odometry, '/tb3_1/odom_world', self.odom_callback1, 10)
+        self.create_subscription(Odometry, '/tb3_2/odom_world', self.odom_callback2, 10)
         self.create_subscription(Bool, '/tb3_1/found_goal', self.found_goal_callback1, 10)
         self.create_subscription(Bool, '/tb3_2/found_goal', self.found_goal_callback2, 10)
         self.create_subscription(Bool, '/model', self.turn_off_callback, 10)
@@ -38,9 +38,9 @@ class PathMPC(Node):
         self.y2 = 0.0
         self.yaw2 = 0.0
 
-        self.path1 = []
-        self.path_header1=""
-        self.path2 = []
+        self.path1 = [(0, 0), (1, 0), (2, 0), (2, 2)]
+        self.path_header1="" 
+        self.path2 = [(3, 2)]
         self.path_header2=""
 
         self.traj1 = []
@@ -60,7 +60,7 @@ class PathMPC(Node):
         self.turn_off = False
 
         ts = 0.1
-        N = 20 # Horizon
+        N = 40 # Horizon
 
         self.pred1 = np.zeros((N + 1, 2))
         self.pred2 = np.zeros((N + 1, 2))
@@ -171,21 +171,19 @@ class PathMPC(Node):
 
             start_idx = self.closest_path_index(path, x, y)
 
-
+            # Compute once per call, not per horizon step
+            obs_x, obs_y = self.closest_occupied(x, y, self.latest_map)
+            if obs_x == None:
+                obs_x, obs_y = x + 50.0, y + 50.0
             for k in range(N + 1):
-
-                # Other robot
                 tvp_template['_tvp', k, 'other_x'] = pred[k, 0]
                 tvp_template['_tvp', k, 'other_y'] = pred[k, 1]
 
-                # Closest obstacle
-                tvp_template['_tvp', k, 'obs_x'], 
-                tvp_template['_tvp', k, 'obs_y'] = self.closest_occupied(x, y, self.latest_map)
+                tvp_template['_tvp', k, 'obs_x'] = obs_x
+                tvp_template['_tvp', k, 'obs_y'] = obs_y
 
-                # Reference trajectory
                 if len(path) > 0:
                     idx = min(start_idx + k, len(path) - 1)
-
                     tvp_template['_tvp', k, 'ref_x'] = path[idx][0]
                     tvp_template['_tvp', k, 'ref_y'] = path[idx][1]
 
@@ -206,10 +204,12 @@ class PathMPC(Node):
         return int(np.argmin(distances))
 
     def closest_occupied(self, x, y, grid):
+        if grid == None:
+            return None, None
         grid_array = np.array(grid.data).reshape(grid.info.height, grid.info.width)
         check_distance = 20
         mini_step = 1
-        closest_cell = None
+        closest_cell = (None, None)
         closest = float('inf')
         column = int((x - grid.info.origin.position.x) / grid.info.resolution)
         row = int((y -grid.info.origin.position.y) / grid.info.resolution)
@@ -224,8 +224,10 @@ class PathMPC(Node):
                     if dist < closest:
                         closest = dist
                         closest_cell = (r, c)
-        occ_x = grid.info.origin.position.x + closest_cell[0] * grid.info.resolution
-        occ_y = grid.info.origin.position.y + closest_cell[1] * grid.info.resolution
+        if closest_cell[0] == None:
+            return None, None
+        occ_x = grid.info.origin.position.x + closest_cell[1] * grid.info.resolution
+        occ_y = grid.info.origin.position.y + closest_cell[0] * grid.info.resolution
         return occ_x, occ_y
 
     def odom_callback1(self, msg):
@@ -247,7 +249,6 @@ class PathMPC(Node):
             2.0 * (q.w * q.z + q.x * q.y),
             1.0 - 2.0 * (q.y * q.y + q.z * q.z)
         )
-        
 
     def found_goal_callback1(self, msg):
         if msg.data:
