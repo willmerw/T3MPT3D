@@ -1,54 +1,16 @@
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Bool
-from geometry_msgs.msg import PoseStamped, PolygonStamped
+from geometry_msgs.msg import PoseStamped, PolygonStamped,Point32
 import numpy as np
 from functools import partial
-class Robot_log():
-    def __init__(self, robot_name:str):
-        pass
-class MissionLog():
-    def __init__(self, players:list):
-        self.plank_leader = None
-        self.players = players
-        self.plank_pos = None
-        self.num_palyers = len(self.players)
 
-        self.plankers = []
-
-        self.maper = None
-
-    def set_plank_leader(self,plank_pos, player):
-        if self.plank_pos is None:
-            if player in self.players:
-                self.plank_pos = plank_pos
-                self.plank_leader = player
-                self.plankers.append(self.plank_leader)
-
-    def go_to_plank(self):
-        if self.plank_pos is None:
-            return None, []
-
-        other_players = [p for p in self.players if p != self.plank_leader]
-
-        return self.plank_pos, other_players
-
-    def redgister(self, robot_name:bool):
-        if len(self.plankers) == len(self.players):
-            return True
-        elif robot_name in self.plankers:
-            return True
-        else:
-            self.plankers.append(robot_name)
-            return False
 
 
 class MissionControlNode(Node):
     def __init__(self):
         super().__init__("mission_control")
-        self.robots = ["tb3_1", "tb3_2"]
-        self.mission_log = MissionLog(self.robots)
-
+        self.robots = ["tb3_1","tb3_2"]
         # 1. Declare parameters (base suffixes for topics)
         # Note: I removed the duplicate parameter declarations you had.
         # Also added "reached_topic" which was missing from the declare block.
@@ -58,7 +20,8 @@ class MissionControlNode(Node):
         self.declare_parameter("model_trigger", "/model")
         self.declare_parameter("goal_pose", "/goal_pose")
         self.declare_parameter("reached_topic", "/reached")
-
+        self.declare_parameter("found_plank","/found")
+        self.declare_parameter("low_fronteirs","/found")
         self.declare_parameter("auto_start", False)
 
         # 2. Get parameter values (these act as our base topic suffixes)
@@ -68,6 +31,8 @@ class MissionControlNode(Node):
         reached_suffix = self.get_parameter("reached_topic").value
         goal_pose_suffix = self.get_parameter("goal_pose").value
         model_trigger_suffix = self.get_parameter("model_trigger").value
+        found_plank_suffix = self.get_parameter("found_plank").value
+        low_fronteir_topic = self.get_parameter("low_fronteirs").value
 
         # 3. Create dictionaries to hold publishers and subscribers per robot
         self.goal_pose_publishers = {}
@@ -79,6 +44,28 @@ class MissionControlNode(Node):
         self.reached_subscriptions = {}
         self.plank_pos1 = [2,3]
         self.plank_pos2 =[1,3]
+        self.found_plank = False
+        self.reached =[]
+        #publishers
+        self.model_trigger_publishers= self.create_publisher(
+                                            Bool, model_topic, 10
+                                        )
+        self.plank_pos_publisher = self.create_publisher(
+                        PolygonStamped, plank_pos_topic, 10
+                    )
+        #subscribers
+        self.found_plank_subcritption =self.create_subscription(
+                        Bool, found_plank_topic,
+                        self.found_plank_callback, 10
+                    )
+        self.found_plank_subcritption =self.create_subscription(
+                                Bool, found_plank_topic,
+                                self.found_plank_callback, 10
+                            )
+        self.low_fronteirs_sbuscription = self.create_subscription(
+                                Bool,found_plank_topic,
+                                self.lowfronteirs,10
+                            )
         # 4. Loop through each robot to create its specific topics
         for robot in self.robots:
             # Construct the namespaced topics (e.g., "/tb3_1/plank_reached")
@@ -89,17 +76,13 @@ class MissionControlNode(Node):
 
             plank_reached_topic = f"/{robot}{plank_reached_suffix}"
             reached_topic = f"/{robot}{reached_suffix}"
+            found_plank_topic =f"/{robot}{found_plank_suffix}"
 
             # --- Publishers ---
             self.goal_pose_publishers[robot] = self.create_publisher(
                 PoseStamped, goal_topic, 10
             )
-            self.model_trigger_publishers= self.create_publisher(
-                                    Bool, model_topic, 10
-                                )
-            self.plank_pos_publisher = self.create_publisher(
-                            PolygonStamped, plank_pos_topic, 10
-                        )
+
 
             self.exploration_trigger_publishers[robot] = self.create_publisher(
                 Bool, explore_topic, 10
@@ -108,6 +91,7 @@ class MissionControlNode(Node):
             # --- Subscribers ---
             # We use partial() to pass the 'robot' variable into the callback
             # so the callback knows which robot sent the message.
+
 
             self.plank_reached_subscriptions[robot] = self.create_subscription(
                 Bool, plank_reached_topic,
@@ -118,14 +102,44 @@ class MissionControlNode(Node):
                 partial(self.reached_callback, robot_name=robot), 10
             )
 
+
         self.get_logger().info(f"Mission Control initialized for robots: {self.robots}")
+        if self.auto_start:
+            self.start_timer = self.create_timer(1.0, self.start_robot)
+
+    def start_robot(self):
+        self.start_timer.cancel()
+        self.plank_pos_pub()
+    def go_to_plank_pub(self):
+        msg = Bool()
+        msg.data = True
+        self.reached_pub.publish(msg)
+
 
     def plank_reached_callback(self, msg, robot_name):
-        if self.mission_log.redgister(robot_name) is True:
-            self.model_trigger_publish(robot_name, False)
+        pass
+    def low_fronteirs_callback(self,msg):
+        if msg.data is True and self.found_plank is True:
+            self.go_to_plank_pub()
+
+    def found_plank_callback(self,msg):
+        if msg.data is True:
+            self.found_plank = True
+
 
     def plank_pos_pub(self):
           # Add your logic here
+        msg = PolygonStamped()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'world'
+
+        # PolygonStamped uses Point32 (x, y, z as 32-bit floats)
+        p1 = Point32(x=self.plank_pos1[0], y =self.plank_pos1[1], z=0.0)
+        p2 = Point32(x=self.plank_pos2[0], y =self.plank_pos2[1], z=0.0)
+        msg.polygon.points = [p1, p2]
+
+        self.publisher_.publish(msg)
+        self.get_logger().info('Published plank polygon')
 
         #   self.mission_log.set_plank_leader(msg.pose.position, robot_name)
 
@@ -159,6 +173,8 @@ class MissionControlNode(Node):
         return goal
 
     def reached_callback(self, msg, robot_name):
+        if robot_name not in self.reached:
+            self.reached.append(robot_name) 
         pass
     def model_trigger_publish(self, robot_name:str, enable:bool)->Bool:
         if robot_name not in self.model_trigger_publishers:
