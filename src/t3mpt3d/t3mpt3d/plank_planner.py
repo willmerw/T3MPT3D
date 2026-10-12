@@ -122,8 +122,6 @@ class PathPlannerNode(Node):
 
         map_msg = self.inflate_map(map_msg)
         self.inf_map_pub.publish(map_msg)
-        map_msg.info.origin.position.x -= 2.0
-        map_msg.info.origin.position.y -= 0.5
         print(map_msg.header.frame_id)
 
 

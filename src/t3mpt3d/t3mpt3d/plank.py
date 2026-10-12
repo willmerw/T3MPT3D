@@ -34,18 +34,17 @@ class PlankMPC(Node):
         self.plank_vis_pub = self.create_publisher(Marker, '/plank_vis', vis_qos)
         self.plank_odom_pub = self.create_publisher(Odometry, '/plank_odom', 10)
         self.marker_pub = self.create_publisher(Marker, '/goal', vis_qos)
-        self.path_pub = self.create_publisher(Path, '/path', vis_qos)
-        self.plank_path_pub = self.create_publisher(MarkerArray, '/plank_path_vis', vis_qos) #Planks on the path
 
         self.timer = self.create_timer(0.1, self.timer_callback)
 
-
+        self.path_received = False
+        self.map_sub = self.create_subscription(Path, '/path', self._on_path, 10)
 
         self.odom1_sub = message_filters.Subscriber(
-            self, Odometry, '/tb3_1/odom',10
+            self, Odometry, '/tb3_1/odom_world',10
         )
         self.odom2_sub = message_filters.Subscriber(
-            self, Odometry, '/tb3_2/odom',10
+            self, Odometry, '/tb3_2/odom_world',10
         )
         self.sync = message_filters.ApproximateTimeSynchronizer(
             [self.odom1_sub, self.odom2_sub], queue_size=10, slop=0.05
@@ -54,7 +53,6 @@ class PlankMPC(Node):
 
         self.p1 = [0.0, 0.0, 0.0]
         self.p2 = [0.0, 0.0, 0.0]
-        self.spawn_offsets = ((-2.0, -0.5), (-2.0, 0.5))
 
         self.plank = [0.0, 0.0, 0.0, 0.0, -np.pi/2] #x,y,th1,th2,thp
 
@@ -64,15 +62,11 @@ class PlankMPC(Node):
         self.model = definePlankModel()
         self.model.setup()
 
-        self.x_desired = 2.0
-        self.y_desired = 2.0
-        #self.yaw_desired = -np.pi/2
-        self.yaw_desired = 0.0
-
-        self.path = [[-2.0,0.0,-np.pi/2],[1.0,1.0,0.0],[2.0,1.0,-np.pi/2],[2.0,3.0,-np.pi/2]]
+        self.received_path = False
+        self.path = [] #x,y,yaw
         self.path_i=0
         ts = 0.1
-        N = 20 # Horizon
+        N = 20 # horizon
 
         self.mpc = definePlankMPC(self.model, ts, N)
 
@@ -87,44 +81,34 @@ class PlankMPC(Node):
         self.mpc.set_tvp_fun(tvp_fun)
         self.mpc.setup()
 
-    def get_robot_pose(self, target_frame, source_frame=None):
-            """
-            Lookup TF to get robot pose (x, y, yaw) in target_frame.
-            Returns None if not available within timeout.
-            """
-            tgt = target_frame
-            src = source_frame or self.base_frame
-
-            try:
-                transform = self.tf_buffer.lookup_transform(
-                    tgt, src, Time(), timeout=self.tf_timeout
-                )
-            except Exception as e:
-                self.get_logger().warn(f'TF lookup {tgt} <- {src} failed: {e}')
-                return None
-
-            t = transform.transform.translation
-            r = transform.transform.rotation
-            yaw = quat_to_yaw(r)
-
-            return (t.x, t.y, yaw)
-
+    def _on_path(self,path_msg):
+        if self.received_path:
+            return
+        poses = path_msg.poses
+        for pose in poses:
+            x = pose.position.x
+            y = pose.position.y
+            q = pose.orientation
+            yaw = np.arctan2(
+                2.0 * (q.w * q.z + q.x * q.y),
+                1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+            )
+            self.poses.append([x,y,yaw])
+        self.received_path = True
 
     def odom_callback(self, odom1_msg: Odometry, odom2_msg: Odometry):
 
-        offset1_x, offset1_y = self.spawn_offsets[0]
-        offset2_x, offset2_y = self.spawn_offsets[1]
 
-        self.p1[0] = odom1_msg.pose.pose.position.x + offset1_x
-        self.p1[1] = odom1_msg.pose.pose.position.y + offset1_y
+        self.p1[0] = odom1_msg.pose.pose.position.x
+        self.p1[1] = odom1_msg.pose.pose.position.y
         q1 = odom1_msg.pose.pose.orientation
         self.p1[2] = np.arctan2(
             2.0 * (q1.w * q1.z + q1.x * q1.y),
             1.0 - 2.0 * (q1.y * q1.y + q1.z * q1.z)
         )
 
-        self.p2[0] = odom2_msg.pose.pose.position.x + offset2_x
-        self.p2[1] = odom2_msg.pose.pose.position.y + offset2_y
+        self.p2[0] = odom2_msg.pose.pose.position.x
+        self.p2[1] = odom2_msg.pose.pose.position.y
         q2 = odom2_msg.pose.pose.orientation
         self.p2[2] = np.arctan2(
             2.0 * (q2.w * q2.z + q2.x * q2.y),
@@ -155,7 +139,7 @@ class PlankMPC(Node):
             self.r1_pub.publish(stop_cmd)
             self.r2_pub.publish(stop_cmd)
             return
-        self.publish_plank_path()
+        #self.publish_plank_path()
         self.x_desired, self.y_desired, self.yaw_desired = self.path[self.path_i]
         d = np.linalg.norm(np.array([self.x_desired, self.y_desired]) - p0[:2])
 
@@ -309,25 +293,6 @@ class PlankMPC(Node):
         marker.color.a = 1.0
 
         self.marker_pub.publish(marker)
-
-    def publish_plank_path(self):
-        path_msg = Path()
-        planks = MarkerArray()
-        path_msg.header.frame_id = 'world'
-        for i,(x,y,thp) in enumerate(self.path):
-            pose = PoseStamped()
-            pose.header = path_msg.header
-            pose.pose.position.x = float(x)
-            pose.pose.position.y = float(y)
-            pose.pose.position.z = 0.0
-            path_msg.poses.append(pose)
-            plank = self.plank_marker(x,y,thp,i)
-            plank.ns = "path_planks"
-            planks.markers.append(plank)
-
-        self.plank_path_pub.publish(planks)
-        self.path_pub.publish(path_msg)
-
 
 def draw_eight(self, x, y, diameter):
     pts = []
