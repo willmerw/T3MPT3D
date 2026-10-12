@@ -76,7 +76,7 @@ class PathPlannerNode(Node):
         self.obs_fid = 0.01 #obstacle fidelity
         self.plank_twist = np.pi/10
         self.goal_radius = 0.2
-        self.map_inflation = 0
+        self.map_inflation = 2
 
         x = self.start[0]
         y = self.start[1]
@@ -96,10 +96,6 @@ class PathPlannerNode(Node):
         self.map_received = False
         self.map_sub = self.create_subscription(OccupancyGrid, '/map', self._on_map, default_qos)
 
-        # TF
-        self.tf_buffer = tf2_ros.Buffer(cache_time=Duration(seconds=10.0))
-        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
-
         # State
         self._latest_map: Optional[OccupancyGrid] = None
         self.latest_path = None
@@ -118,6 +114,9 @@ class PathPlannerNode(Node):
         print("PLANNING PATH")
 
         map_msg = self.inflate_map(map_msg)
+        map_msg.info.origin.position.x -= 2.0
+        map_msg.info.origin.position.y -= 0.5
+
 
         self.inf_map_pub.publish(map_msg)
 
@@ -138,17 +137,21 @@ class PathPlannerNode(Node):
         # RRT
         num_nodes = 2000
         for it in range(num_nodes):
+
             r_x = np.random.uniform(origin_x, origin_x+map_width)
             r_y = np.random.uniform(origin_y, origin_y+map_height)
             random_pt = np.array([r_x, r_y], dtype=float)
+
+            #random_pt = (np.random.default_rng(0).uniform(x_min, x_max), .uniform(y_min, y_max))
+
 
             _, closest_node = self.tree.get_closest_node(random_pt)
             d = np.array(random_pt - closest_node.pt)
             d_norm = np.linalg.norm(d)
             border_pt = closest_node.pt + (d/d_norm)*self.node_max_dist
-            obs = self.check_obs(closest_node.pt,random_pt,map_msg)
+            obs = self.check_obs(closest_node.pt,border_pt,map_msg)
             if obs:
-                pass
+                continue
 
             if d_norm < self.node_max_dist:
                 new_node = TreeNode(pt=random_pt,parent=closest_node)
