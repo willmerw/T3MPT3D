@@ -35,7 +35,7 @@ class PathMPC(Node):
         self.y1 = 0.0
         self.yaw1 = 0.0
         self.x2 = 0.0
-        self.y2 = 0.0
+        self.y2 = 1.0
         self.yaw2 = 0.0
 
         self.path1 = [(0, 0), (1, 0), (2, 0), (2, 2)]
@@ -168,6 +168,7 @@ class PathMPC(Node):
                 path = self.path2
                 x = self.x2
                 y = self.y2
+                print("hej", x, y)
 
             start_idx = self.closest_path_index(path, x, y)
 
@@ -176,6 +177,7 @@ class PathMPC(Node):
             if obs_x == None:
                 obs_x, obs_y = x + 50.0, y + 50.0
             for k in range(N + 1):
+                print(x, y)
                 tvp_template['_tvp', k, 'other_x'] = pred[k, 0]
                 tvp_template['_tvp', k, 'other_y'] = pred[k, 1]
 
@@ -313,7 +315,7 @@ class PathMPC(Node):
             self.path_publisher1.publish(traj_msg)
 
             u = self.mpc1.make_step(p)
-
+            self.get_logger().info(f'r1 state=({self.x1:.2f},{self.y1:.2f},{self.yaw1:.2f}) u=({u[0][0]:.3f},{u[1][0]:.3f}) ref0={self.path1[self.closest_path_index(self.path1, self.x1, self.y1)]}')
             x_pred = self.mpc1.data.prediction(('_x', 'x')).flatten()
             y_pred = self.mpc1.data.prediction(('_x', 'y')).flatten()
             self.pred1 = np.column_stack((x_pred, y_pred))
@@ -363,7 +365,7 @@ class PathMPC(Node):
             self.path_publisher2.publish(traj_msg)
 
             u = self.mpc2.make_step(p)
-
+            self.get_logger().info(f'r1 state=({self.x1:.2f},{self.y1:.2f},{self.yaw1:.2f}) u=({u[0][0]:.3f},{u[1][0]:.3f}) ref0={self.path1[self.closest_path_index(self.path1, self.x1, self.y1)]}')
             x_pred = self.mpc2.data.prediction(('_x', 'x')).flatten()
             y_pred = self.mpc2.data.prediction(('_x', 'y')).flatten()
             self.pred2 = np.column_stack((x_pred, y_pred))
