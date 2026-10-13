@@ -12,23 +12,35 @@ import math
 class PathMPC(Node):
     def __init__(self):
         super().__init__('turtle_mpc_node')
+        self.declare_parameter('tb1_cmd_vel', '/turtlebot1/cmd_vel')
+        self.declare_parameter('tb2_cmd_vel', '/turtlebot2/cmd_vel')
+        self.declare_parameter('tb1_odom', '/turtlebot1/odom_world')
+        self.declare_parameter('tb2_odom', '/turtlebot2/odom_world')
+        self.declare_parameter('tb1_found_goal', '/turtlebot1/found_goal')
+        self.declare_parameter('tb2_found_goal', '/turtlebot2/found_goal')
+        self.declare_parameter('rivstart', '/rivstart')      
 
-        self.cmd_vel_publisher1 = self.create_publisher(TwistStamped, '/tb3_1/cmd_vel', 10)
-        self.cmd_vel_publisher2 = self.create_publisher(TwistStamped, '/tb3_2/cmd_vel', 10)
-        self.mpc_traj_publisher1 = self.create_publisher(Path, '/tb3_1/mpc_trajectory', 10)
-        self.mpc_traj_publisher2 = self.create_publisher(Path, '/tb3_2/mpc_trajectory', 10)
-        self.path_publisher1 = self.create_publisher(Path, '/tb3_1/followed_path', 10)
-        self.path_publisher2 = self.create_publisher(Path, '/tb3_2/followed_path', 10)
+        tb1_cmd_vel:str = self.get_parameter('tb1_cmd_vel').get_parameter_value().string_value
+        tb2_cmd_vel:str = self.get_parameter('tb2_cmd_vel').get_parameter_value().string_value
+        tb1_odom:str = self.get_parameter('tb1_odom').get_parameter_value().string_value
+        tb2_odom:str = self.get_parameter('tb2_odom').get_parameter_value().string_value
+        tb1_found_goal:bool = self.get_parameter('tb1_found_goal').get_parameter_value().bool_value
+        tb2_found_goal:bool = self.get_parameter('tb2_found_goal').get_parameter_value().bool_value
+        rivstart:bool = self.get_parameter('rivstart').get_parameter_value().bool_value
+
+        self.cmd_vel_publisher1 = self.create_publisher(TwistStamped, tb1_cmd_vel, 10)
+        self.cmd_vel_publisher2 = self.create_publisher(TwistStamped, tb2_cmd_vel, 10)
+        
 
         self.timer = self.create_timer(0.1, self.timer_callback)
 
-        self.create_subscription(Odometry, '/tb3_1/odom_world', self.odom_callback1, 10)
-        self.create_subscription(Odometry, '/tb3_2/odom_world', self.odom_callback2, 10)
-        self.create_subscription(Bool, '/tb3_1/found_goal', self.found_goal_callback1, 10)
-        self.create_subscription(Bool, '/tb3_2/found_goal', self.found_goal_callback2, 10)
-        self.create_subscription(Bool, '/model', self.turn_off_callback, 10)
-        self.create_subscription(Path, '/tb3_1/path', self.path_callback1, 10)
-        self.create_subscription(Path, '/tb3_2/path', self.path_callback2, 10)
+        self.create_subscription(Odometry, tb1_odom, self.odom_callback1, 10)
+        self.create_subscription(Odometry, tb2_odom, self.odom_callback2, 10)
+        self.create_subscription(Bool, tb1_found_goal, self.found_goal_callback1, 10)
+        self.create_subscription(Bool, tb2_found_goal, self.found_goal_callback2, 10)
+        self.create_subscription(Bool, rivstart, self.turn_off_callback, 10)
+        self.create_subscription(Path, '/turtlebot1/path', self.path_callback1, 10)
+        self.create_subscription(Path, '/turtlebot1/path', self.path_callback2, 10)
         self.create_subscription(OccupancyGrid, 'map', self.map_callback, 10)
 
         self.x1 = 0.0
@@ -315,35 +327,10 @@ class PathMPC(Node):
             self.mpc1.x0 = p0
             p = p0.copy()
 
-            self.traj1.append([self.x1, self.y1])
-            traj_msg = Path()
-            traj_msg.header.frame_id = 'odom'
-            for x,y in self.traj1:
-                pose = PoseStamped()
-                pose.header = traj_msg.header
-                pose.pose.position.x = float(x)
-                pose.pose.position.y = float(y)
-                pose.pose.position.z = 0.0
-                traj_msg.poses.append(pose)
-
-            self.path_publisher1.publish(traj_msg)
-
             u = self.mpc1.make_step(p)
             x_pred = self.mpc1.data.prediction(('_x', 'x')).flatten()
             y_pred = self.mpc1.data.prediction(('_x', 'y')).flatten()
             self.pred1 = np.column_stack((x_pred, y_pred))
-
-            path_msg = Path()
-            path_msg.header.stamp = self.get_clock().now().to_msg()
-            path_msg.header.frame_id = 'odom'
-
-            for x, y in zip(x_pred, y_pred):
-                pose = PoseStamped()
-                pose.header = path_msg.header
-                pose.pose.position.x = float(x)
-                pose.pose.position.y = float(y)
-                path_msg.poses.append(pose)
-            self.mpc_traj_publisher1.publish(path_msg)
 
             new_cmd = TwistStamped()
             new_cmd.twist.linear.x = u[0][0]
@@ -364,35 +351,10 @@ class PathMPC(Node):
             self.mpc2.x0 = p0
             p = p0.copy()
 
-            self.traj2.append([self.x2, self.y2])
-            traj_msg = Path()
-            traj_msg.header.frame_id = 'odom'
-            for x,y in self.traj2:
-                pose = PoseStamped()
-                pose.header = traj_msg.header
-                pose.pose.position.x = float(x)
-                pose.pose.position.y = float(y)
-                pose.pose.position.z = 0.0
-                traj_msg.poses.append(pose)
-
-            self.path_publisher2.publish(traj_msg)
-
             u = self.mpc2.make_step(p)
             x_pred = self.mpc2.data.prediction(('_x', 'x')).flatten()
             y_pred = self.mpc2.data.prediction(('_x', 'y')).flatten()
             self.pred2 = np.column_stack((x_pred, y_pred))
-
-            path_msg = Path()
-            path_msg.header.stamp = self.get_clock().now().to_msg()
-            path_msg.header.frame_id = 'odom'
-
-            for x, y in zip(x_pred, y_pred):
-                pose = PoseStamped()
-                pose.header = path_msg.header
-                pose.pose.position.x = float(x)
-                pose.pose.position.y = float(y)
-                path_msg.poses.append(pose)
-            self.mpc_traj_publisher2.publish(path_msg)
 
             new_cmd = TwistStamped()
             new_cmd.twist.linear.x = u[0][0]
