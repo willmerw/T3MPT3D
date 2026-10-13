@@ -27,6 +27,10 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time')
     slam_params_file = LaunchConfiguration('slam_params_file')
     other_target_topic = LaunchConfiguration('other_target_topic')
+    yields = LaunchConfiguration('yields')
+    stop_on_found = LaunchConfiguration('stop_on_found')
+    min_frontiers_cells = LaunchConfiguration('min_frontiers_cells')
+    plank_index = LaunchConfiguration('plank_index')
 
     # 1. Declare Launch Arguments
     declare_namespace_cmd = DeclareLaunchArgument(
@@ -54,6 +58,13 @@ def generate_launch_description():
         'other_target_topic', default_value='other_target_topic',
         description='Topic with the other robot\'s target (absolute, e.g. /tb3_1/my_target_topic)')
 
+    declare_yields = DeclareLaunchArgument('yields', default_value='false')
+
+    declare_stop_on_found = DeclareLaunchArgument('stop_on_found', default_value='false')
+
+    declare_min_frontiers_cells = DeclareLaunchArgument('min_frontiers_cells', default_value='20')
+
+    declare_plank_index = DeclareLaunchArgument('plank_index', default_value='0')
     # 2. Custom Nodes and RViz
     custom_nodes = GroupAction([
         PushRosNamespace(namespace),
@@ -70,7 +81,12 @@ def generate_launch_description():
              name='navigation_node',
              parameters=[{'use_sim_time': use_sim_time,
                         'base_frame': [namespace, '/base_footprint'],
-                        'other_target_topic': other_target_topic}],
+                        'other_target_topic': other_target_topic,
+                        'yields': yields,
+                        "stop_on_found": stop_on_found,
+                        'min_frontiers_cells': min_frontiers_cells,
+                        'plank_index': plank_index,
+                        }],
              remappings=[('map', '/map'), ('frontiers', '/frontiers')],
              output='screen'
          ),
@@ -80,7 +96,7 @@ def generate_launch_description():
              name='path_follower_node',
              parameters=[{'use_sim_time': use_sim_time,
                           'base_frame': [namespace, '/base_footprint']}],
-         ),
+        ),
         # Node(
         #     package='rviz2',
         #     executable='rviz2',
@@ -158,6 +174,10 @@ def generate_launch_description():
     ld.add_action(declare_use_lifecycle_manager)
     ld.add_action(declare_use_sim_time_argument)
     ld.add_action(declare_slam_params_file_cmd)
+    ld.add_action(declare_yields)
+    ld.add_action(declare_stop_on_found)
+    ld.add_action(declare_min_frontiers_cells)
+    ld.add_action(declare_plank_index)
 
     ld.add_action(custom_nodes)
     ld.add_action(start_async_slam_toolbox_node)

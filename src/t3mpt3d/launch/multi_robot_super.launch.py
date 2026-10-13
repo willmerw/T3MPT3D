@@ -28,7 +28,12 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(slam_nav_launch),
         launch_arguments={
             'namespace': 'tb3_1',
-            'use_sim_time': 'true'   # <--- ADD THIS
+            'use_sim_time': 'true',   # <--- ADD THIS
+            'other_target_topic': '/tb3_2/my_target_topic',
+            'yields': 'false',
+            'stop_on_found': 'false',
+            'min_frontiers_cells': '20',
+            'plank_index': '0',
         }.items()
     )
 
@@ -39,6 +44,11 @@ def generate_launch_description():
             'namespace': 'tb3_2',
             'use_sim_time': 'true',   # <--- ADD THIS
             'other_target_topic': '/tb3_1/my_target_topic',
+            'yields': 'true',
+            'stop_on_found': 'false',
+            'min_frontiers_cells': '20',
+            'plank_index': '1'
+
         }.items()
     )
 

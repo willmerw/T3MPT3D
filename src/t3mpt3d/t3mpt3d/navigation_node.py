@@ -11,14 +11,21 @@ from rclpy.duration import Duration
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
 import tf2_geometry_msgs
-from geometry_msgs.msg import PoseStamped, Quaternion, Point, PointStamped
+from geometry_msgs.msg import PoseStamped, Quaternion, Point, PointStamped, PolygonStamped
 from nav_msgs.msg import Path, OccupancyGrid
+from std_msgs.msg import Bool
 from visualization_msgs.msg import Marker
 from builtin_interfaces.msg import Time as TimeMsg
 from rclpy.time import Time
 
 import tf2_ros
 
+# state names defined
+WAIT_PLANK = 'WAIT_PLANK'
+EXPLORE = 'EXPLORE'
+WAIT_MOVE = 'WAIT_MOVE'
+GO_TO_PLANK = 'GO_TO_PLANK'
+REACHED = 'REACHED'
 
 def quat_to_yaw(q: Quaternion) -> float:
     """Extract planar yaw (rad) from a Quaternion."""
@@ -76,6 +83,43 @@ def segment_free(start, end, spacing, occ, unk, ox, oy, res, dr, dc):
 
     return points_free(pts=pts[1:], occ=occ, unk=unk, ox=ox, oy=oy, res=res, dr=dr, dc=dc).all()
 
+def plank_visible(robot_cord, p1, p2,vision_radius, occ, ox, oy, res):
+    # convert to nparray
+    robot_cord = np.asarray(robot_cord, dtype=float)
+    p1 = np.asarray(p1, dtype=float)
+    p2 = np.asarray(p2, dtype=float)
+
+    # distance between the ends
+    p2p1 = p2 - p1
+    p2p1dot = np.dot(p2p1, p2p1)
+
+    if p2p1dot > 0:
+        # projection of robot_pos on plank line. p1 = 0 and p2 = 1
+        segment = np.dot(robot_cord - p1, p2p1) / p2p1dot
+        # keep the line clipped between p1 and p2
+        segment = np.clip(segment, 0, 1)
+        # the closest point to the line.
+        closest = p1 + segment * p2p1
+    else:
+        closest = p1
+
+    dist = np.linalg.norm(robot_cord-closest)
+
+    if dist > vision_radius: return False
+
+    dr = dc = np.array([0])
+    n = int(np.ceil(dist / (res/2)) + 1)
+
+    pts = np.linspace(robot_cord, closest, n)
+    unk = np.zeros_like(occ)
+    visible = points_free(pts[:-1], occ, unk, ox, oy, res, dr, dc)
+
+
+    return visible.all()
+
+
+
+
 class TreeNode():
     """
     Create the Nodes.
@@ -108,6 +152,13 @@ class PathPlannerNode(Node):
         self.declare_parameter("my_target_topic", "my_target_topic")
         self.declare_parameter("other_target_topic", "other_target_topic")
 
+        self.declare_parameter('plank_topic', '/plank')
+        self.declare_parameter('reached_topic','reached')
+        self.declare_parameter('found_topic','/found')
+        self.declare_parameter('low_topic', '/low')
+        self.declare_parameter('move_to_plank_topic', '/move_to_plank')
+
+
         self.declare_parameter("segment_size", 0.1)
         self.declare_parameter('tf_timeout_sec', 0.5)
         self.declare_parameter("goal_radius", 0.3)
@@ -125,6 +176,12 @@ class PathPlannerNode(Node):
         self.declare_parameter("fail_radius", 0.5)
         self.declare_parameter("w_other", 3.0)
         self.declare_parameter("r_other", 1.5)
+        self.declare_parameter("yields", False)
+        self.declare_parameter("explore_more", False)
+        self.declare_parameter('vision_radius', 1.0)
+        self.declare_parameter('stop_on_found', False)
+        self.declare_parameter('min_frontiers_cells', 30)
+        self.declare_parameter('plank_index', 0)
 
         map_topic: str = self.get_parameter('map_topic').get_parameter_value().string_value
         frontier_topic: str = self.get_parameter('frontier_topic').get_parameter_value().string_value
@@ -133,6 +190,12 @@ class PathPlannerNode(Node):
         goal_pub_topic: str = self.get_parameter("goal_pub_topic").get_parameter_value().string_value
         my_target_topic: str = self.get_parameter("my_target_topic").get_parameter_value().string_value
         other_target_topic: str = self.get_parameter("other_target_topic").get_parameter_value().string_value
+        plank_topic: str = self.get_parameter("plank_topic").get_parameter_value().string_value
+        found_topic: str = self.get_parameter("found_topic").get_parameter_value().string_value
+        reached_topic: str = self.get_parameter("reached_topic").get_parameter_value().string_value
+        low_topic: str = self.get_parameter("low_topic").get_parameter_value().string_value
+        move_to_plank_topic: str = self.get_parameter("move_to_plank_topic").get_parameter_value().string_value
+
 
         self.goal_radius: float = self.get_parameter("goal_radius").get_parameter_value().double_value
         self.goal_bias: float = self.get_parameter("goal_bias").get_parameter_value().double_value
@@ -150,6 +213,12 @@ class PathPlannerNode(Node):
         self.fail_radius: float = self.get_parameter("fail_radius").get_parameter_value().double_value
         self.w_other: float = self.get_parameter("w_other").get_parameter_value().double_value
         self.r_other: float = self.get_parameter("r_other").get_parameter_value().double_value
+        self.yields: bool = self.get_parameter("yields").get_parameter_value().bool_value
+        self.explore_more: bool = self.get_parameter("explore_more").get_parameter_value().bool_value
+        self.vision_radius: float = self.get_parameter('vision_radius').get_parameter_value().double_value
+        self.stop_on_found: bool = self.get_parameter('stop_on_found').get_parameter_value().bool_value
+        self.min_frontiers_cells: int = self.get_parameter('min_frontiers_cells').get_parameter_value().integer_value
+        self.plank_index: int = self.get_parameter('plank_index').get_parameter_value().integer_value
 
         self.base_frame: str = self.get_parameter('base_frame').get_parameter_value().string_value
         self.tf_timeout = Duration(seconds=self.get_parameter('tf_timeout_sec').get_parameter_value().double_value)
@@ -159,6 +228,8 @@ class PathPlannerNode(Node):
 
 
         default_qos = QoSProfile(depth=10)
+        plank_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                               reliability=ReliabilityPolicy.RELIABLE)
 
 
         # Publishers
@@ -166,17 +237,24 @@ class PathPlannerNode(Node):
         self.tree_pub = self.create_publisher(Marker, tree_topic, default_qos)
         self.goal_pub = self.create_publisher(Marker, goal_pub_topic, default_qos)
         self.target_pub = self.create_publisher(PointStamped, my_target_topic, default_qos)
+        self.reached_pub = self.create_publisher(Bool, reached_topic, plank_qos)
+        self.found_pub = self.create_publisher(Bool, found_topic, plank_qos)
+        self.low_pub = self.create_publisher(Bool, low_topic, plank_qos)
 
         # Subscribers
         self.map_sub = self.create_subscription(OccupancyGrid, map_topic, self._on_map, default_qos)
         self.frontier_sub = self.create_subscription(OccupancyGrid, frontier_topic, self._on_frontier, default_qos)
         self.target_sub = self.create_subscription(PointStamped, other_target_topic, self._other_target, default_qos)
+        self.plank_sub = self.create_subscription(PolygonStamped, plank_topic, self._plank_msg, plank_qos)
+        self.move_sub = self.create_subscription(Bool, move_to_plank_topic, self._move_msg, plank_qos)
+        self.found_sub = self.create_subscription(Bool, found_topic, self._found_msg, plank_qos)
 
         # TF
         self.tf_buffer = tf2_ros.Buffer(cache_time=Duration(seconds=10.0))
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
         # State
+        self.state = WAIT_PLANK
         self.goal = None
         self.target = None
         self.publish_time = None
@@ -186,9 +264,10 @@ class PathPlannerNode(Node):
         self.arrival_threshold = self.goal_radius * 1.2
         self.foot_print = self.goal_radius * 2
         self.sticky_radius = self.goal_radius * 1.5
+        self.counter = 0
 
+        self.plank_found = False
         self.low_frontiers = False
-        self.stopped = False
         self.failed = []
 
         self.timeout = Duration(seconds=30)
@@ -225,9 +304,37 @@ class PathPlannerNode(Node):
 
     # ----------------- Callbacks -----------------
 
+
+    def _found_msg(self, msg) -> None:
+        if msg.data and not self.plank_found:
+            self.plank_found = True
+            self.get_logger().info(f'plank found via /found')
+
+
+    def _move_msg(self, msg) -> None:
+        if msg.data and self.state in (EXPLORE, WAIT_MOVE):
+            self.goal = None
+            self.set_state(GO_TO_PLANK)
+
+    def _plank_msg(self, msg: PolygonStamped) -> None:
+        if len(msg.polygon.points) != 2:
+            self.get_logger().warn(f"polygon did not contain two cordinates.")
+            return
+        self._plank = msg
+        if self.state == WAIT_PLANK:
+            self.set_state(EXPLORE)
+
     def _other_target(self, msg: PointStamped) -> None:
         """Store the latest target point from the other robot"""
         self._latest_target = msg
+
+        if self.state != EXPLORE or not self.yields or self.goal is None: return
+        p = self.to_my_frame(msg)
+        if p is None: return
+        if np.hypot(self.goal[0]-p.point.x, self.goal[1]-p.point.y) < self.r_other:
+            self.get_logger().info(f"yielding ({self.goal}) to the other robot")
+            self.goal = None
+
 
     def _on_frontier(self, msg: OccupancyGrid) -> None:
         """Store the latest frontier map (could be used by your planner)."""
@@ -236,15 +343,46 @@ class PathPlannerNode(Node):
     def _on_map(self, msg: OccupancyGrid) -> None:
         """Trigger planning when a new map arrives."""
         self.map_frame = msg.header.frame_id
+
+        if self.state == WAIT_PLANK:
+            self.get_logger().info(f"waiting", throttle_duration_sec=5.0)
+            return
+
         self._latest_map = msg # keep latest map
         if self._latest_frontier is None: return
 
         pose = self.get_robot_pose(target_frame=self.map_frame)
         if pose is None:
             return
+        if self.state == EXPLORE:
+            self.exploring(msg, pose)
+        elif self.state == GO_TO_PLANK:
+            self.go_to_plank(msg, pose)
+
+    # ----------------- help functions -----------------
+    def exploring(self,msg: Optional[OccupancyGrid], pose):
+        # plank cordinates and map data
+        p = self.to_my_frame(self._plank)
+        if p is not None:
+            pts = p.polygon.points
+            p1 = (pts[0].x, pts[0].y)
+            p2 = (pts[1].x, pts[1].y)
+            occ = np.array(msg.data, dtype=np.int8).reshape(msg.info.height, msg.info.width) > 50
+            ox = msg.info.origin.position.x
+            oy = msg.info.origin.position.y
+            res = msg.info.resolution
+
+            if not self.plank_found and plank_visible(pose[:2], p1, p2,
+                                                    self.vision_radius, occ, ox, oy, res):
+                self.plank_found = True
+                self.get_logger().info(f'PLANK FOUND')
+                self.found_pub.publish(Bool(data=True))
+
+            if self.stop_on_found and self.plank_found:
+                self.finish_exploration(msg)
+                return
 
         x, y, yaw = pose
-
         if self.goal is not None: # Three states for a goal to end.
             d = self.distance(self.goal,x,y)
             if d < self.arrival_threshold: # Distance of current position to goal position is shorter than a arrival_threshold.
@@ -260,24 +398,13 @@ class PathPlannerNode(Node):
                 self.goal = None
             else:
                 return
-
-
         path = self.plan_path((x, y, yaw),
-                              msg,
-                              self._latest_frontier)
-
+                            msg,
+                            self._latest_frontier,
+                            fixed_target=None)
         if path is None or not path.poses:
-            if  self.low_frontiers and not self.stopped: # Logic for sending a ZERO path to the path_follower_node so there is a termination.
-                empty_path = Path()
-                empty_path.header.frame_id = msg.header.frame_id
-                empty_path.header.stamp = msg.header.stamp
-
-                self.path_pub.publish(empty_path)
-                self.goal = None
-                self.stopped = True
-                self.get_logger().info(f"Exploration complete")
-            elif not self.low_frontiers:
-                self.stopped = False
+            if self.low_frontiers: # Logic for sending a ZERO path to the path_follower_node so there is a termination.
+                self.finish_exploration(msg)
             return
         else:
             self.publish_target(self.target)
@@ -285,9 +412,54 @@ class PathPlannerNode(Node):
             self.goal = (self.target[0], self.target[1])
             self.publish_time = self.get_clock().now()
 
+    def go_to_plank(self, msg: Optional[OccupancyGrid], pose):
+        p = self.to_my_frame(self._plank)
+        if p is None: return
+        pt = p.polygon.points[self.plank_index]
+        end = (pt.x, pt.y)
+        x, y, yaw = pose
+        d = self.distance(end, x, y)
+        if self.goal is not None:
+            if d < self.goal_radius:
+                self.goal = None
+                self.no_path(msg)
+                self.set_state(REACHED)
+                self.reached_pub.publish(Bool(data=True))
+            elif self.get_clock().now() - self.publish_time > self.timeout:
+                self.get_logger().info(f"timeout")
+                self.goal = None
+            return
 
+        path = self.plan_path((x, y, yaw),
+                                msg,
+                                self._latest_frontier,
+                                fixed_target=end)
+        if path is None:
+            self.get_logger().info("no path to plank end, retrying", throttle_duration_sec=5.0)
+            return
+        else:
+            self.path_pub.publish(path)
+            self.goal = (self.target[0], self.target[1])
+            self.publish_time = self.get_clock().now()
 
-    # ----------------- help functions -----------------
+    def no_path(self,msg):
+        empty_path = Path()
+        empty_path.header.frame_id = msg.header.frame_id
+        empty_path.header.stamp = msg.header.stamp
+        self.path_pub.publish(empty_path)
+
+    def finish_exploration(self, msg):
+        self.no_path(msg)
+        self.goal = None
+        self.get_logger().info(f"Exploration complete")
+        self.set_state(WAIT_MOVE)
+        self.low_pub.publish(Bool(data=True))
+
+    def set_state(self, new):
+        if new != self.state:
+            self.get_logger().info(f"state {self.state} -> {new}")
+            self.state = new
+
     def to_my_frame(self, msg):
         if self.map_frame is None: return None
         try:
@@ -336,9 +508,19 @@ class PathPlannerNode(Node):
         return clusters
 
     def heuristic_func(self, start, clusters):
-        if not clusters:
+
+        cells = sum(c[2] for c in clusters)
+        if cells < self.min_frontiers_cells:
+            self.counter += 1
+        else:
+            self.counter = 0
+
+        if self.counter >=3:
             self.low_frontiers = True
             return None
+
+        if not clusters: return None
+
         self.low_frontiers = False
         arr = np.array(clusters)
         fx, fy, gain = arr[:,0], arr[:,1], arr[:,2]
@@ -429,7 +611,8 @@ class PathPlannerNode(Node):
     def plan_path(self,
                   start: Tuple[float, float, float],
                   map_msg: OccupancyGrid,
-                  frontier_msg: Optional[OccupancyGrid]):
+                  frontier_msg: Optional[OccupancyGrid],
+                  fixed_target):
 
         mapResolution = map_msg.info.resolution
         mapOrigin = map_msg.info.origin
@@ -442,6 +625,7 @@ class PathPlannerNode(Node):
 
         x_min = mapOrigin.position.x
         y_min = mapOrigin.position.y
+
         x_max = x_min + w * mapResolution
         y_max = y_min + h * mapResolution
         c = self.bot_radius + self.safty_margin
@@ -450,9 +634,14 @@ class PathPlannerNode(Node):
 
         dr, dc = disk_offsets(disk_radius, mapResolution)
 
-        clusters = self.frontier_clusters(start, frontier_msg, occ, unk, x_min, y_min, mapResolution, dr, dc) # Get valid clusters
-
-        self.target = self.heuristic_func(start, clusters)
+        if fixed_target is not None:
+            self.target = fixed_target
+        else:
+            clusters = self.frontier_clusters(start,
+                                              frontier_msg,
+                                              occ, unk, x_min, y_min,
+                                              mapResolution, dr, dc) # Get valid clusters
+            self.target = self.heuristic_func(start, clusters)
         if self.target is None: return None
 
         self.publish_marker(self.target)

@@ -55,7 +55,7 @@ class PathFollower(Node):
     def update_robot_pos(self):
         try:
             ts: TransformStamped = self.buffer.lookup_transform(
-                self.path_header,         # target frame
+                self.path_header,  # target frame
                 self.base_frame,   # source frame
                 rclpy.time.Time()
             )
