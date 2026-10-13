@@ -16,16 +16,12 @@ class PathMPC(Node):
         self.declare_parameter('tb2_cmd_vel', '/turtlebot2/cmd_vel')
         self.declare_parameter('tb1_odom', '/turtlebot1/odom_world')
         self.declare_parameter('tb2_odom', '/turtlebot2/odom_world')
-        self.declare_parameter('tb1_found_goal', '/turtlebot1/found_goal')
-        self.declare_parameter('tb2_found_goal', '/turtlebot2/found_goal')
         self.declare_parameter('rivstart', '/rivstart')      
 
         tb1_cmd_vel:str = self.get_parameter('tb1_cmd_vel').get_parameter_value().string_value
         tb2_cmd_vel:str = self.get_parameter('tb2_cmd_vel').get_parameter_value().string_value
         tb1_odom:str = self.get_parameter('tb1_odom').get_parameter_value().string_value
         tb2_odom:str = self.get_parameter('tb2_odom').get_parameter_value().string_value
-        tb1_found_goal:str = self.get_parameter('tb1_found_goal').get_parameter_value().string_value
-        tb2_found_goal:str = self.get_parameter('tb2_found_goal').get_parameter_value().string_value
         rivstart:str = self.get_parameter('rivstart').get_parameter_value().string_value
 
         self.cmd_vel_publisher1 = self.create_publisher(TwistStamped, tb1_cmd_vel, 10)
@@ -36,8 +32,6 @@ class PathMPC(Node):
 
         self.create_subscription(Odometry, tb1_odom, self.odom_callback1, 10)
         self.create_subscription(Odometry, tb2_odom, self.odom_callback2, 10)
-        self.create_subscription(Bool, tb1_found_goal, self.found_goal_callback1, 10)
-        self.create_subscription(Bool, tb2_found_goal, self.found_goal_callback2, 10)
         self.create_subscription(Bool, rivstart, self.turn_off_callback, 10)
         self.create_subscription(Path, '/turtlebot1/path', self.path_callback1, 10)
         self.create_subscription(Path, '/turtlebot1/path', self.path_callback2, 10)
@@ -62,10 +56,6 @@ class PathMPC(Node):
         self.model1.setup()
         self.model2.setup()
 
-        self.found_goal1 = False
-        self.found_goal2 = False
-        self.stopped1 = False
-        self.stopped2 = False
         self.turn_off = False
 
         ts = 0.1
@@ -177,7 +167,6 @@ class PathMPC(Node):
                 path = self.path2
                 x = self.x2
                 y = self.y2
-                print("hej", x, y)
 
             start_idx = self.closest_path_index(path, x, y)
 
@@ -186,7 +175,6 @@ class PathMPC(Node):
             if obs_x == None:
                 obs_x, obs_y = x + 50.0, y + 50.0
             for k in range(N + 1):
-                print(x, y)
                 tvp_template['_tvp', k, 'other_x'] = pred[k, 0]
                 tvp_template['_tvp', k, 'other_y'] = pred[k, 1]
 
@@ -261,18 +249,6 @@ class PathMPC(Node):
             1.0 - 2.0 * (q.y * q.y + q.z * q.z)
         )
 
-    def found_goal_callback1(self, msg):
-        if msg.data:
-            self.found_goal1 = True
-
-    def found_goal_callback2(self, msg):
-        if msg.data:
-            new_cmd = TwistStamped()
-            new_cmd.twist.linear.x = 0.0
-            new_cmd.twist.angular.z = 0.0
-            self.cmd_vel_publisher2.publish(new_cmd)
-            self.found_goal2 = True
-
     def turn_off_callback(self, msg):
         if msg.data:
             self.turn_off = True
@@ -293,6 +269,12 @@ class PathMPC(Node):
         self.latest_map = msg
 
     def timer_callback(self):
+        if self.turn_off:
+            new_cmd = TwistStamped()
+            new_cmd.twist.linear.x = 0.0
+            new_cmd.twist.angular.z = 0.0
+            self.cmd_vel_publisher1.publish(new_cmd)
+            return
         tb3_1_stop = False
         tb3_2_stop = False
         if len(self.path1) == 0:
@@ -310,15 +292,6 @@ class PathMPC(Node):
         if self.turn_off:
             return None
 
-        if self.found_goal1:
-            if self.stopped1:
-                pass
-            else:
-                new_cmd = TwistStamped()
-                new_cmd.twist.linear.x = 0.0
-                new_cmd.twist.angular.z = 0.0
-                self.cmd_vel_publisher1.publish(new_cmd)
-                self.stopped1 = True
         if not tb3_1_stop:
             p0 = np.array([self.x1, self.y1, self.yaw1])
             self.mpc1.x0 = p0
@@ -334,15 +307,6 @@ class PathMPC(Node):
             new_cmd.twist.angular.z = u[1][0]
             self.cmd_vel_publisher1.publish(new_cmd)
 
-        if self.found_goal2 and not self.stopped2:
-            if self.stopped2:
-                pass
-            else:
-                new_cmd = TwistStamped()
-                new_cmd.twist.linear.x = 0.0
-                new_cmd.twist.angular.z = 0.0
-                self.cmd_vel_publisher2.publish(new_cmd)
-                self.stopped2 = True
         if not tb3_2_stop:
             p0 = np.array([self.x2, self.y2, self.yaw2])
             self.mpc2.x0 = p0
