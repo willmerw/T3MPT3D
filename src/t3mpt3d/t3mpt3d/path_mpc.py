@@ -285,7 +285,15 @@ class PathMPC(Node):
 
     def timer_callback(self):
         if len(self.path1) == 0:
-            return None
+            new_cmd = TwistStamped()
+            new_cmd.twist.linear.x = 0.0
+            new_cmd.twist.angular.z = 0.0
+            self.cmd_vel_publisher1.publish(new_cmd)
+        if len(self.path2) == 0:
+            new_cmd = TwistStamped()
+            new_cmd.twist.linear.x = 0.0
+            new_cmd.twist.angular.z = 0.0
+            self.cmd_vel_publisher1.publish(new_cmd)
         if self.turn_off:
             return None
 
