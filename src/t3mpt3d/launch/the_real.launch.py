@@ -46,7 +46,11 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(slam_nav_launch),
         launch_arguments={
             'namespace': TB2_NAME,
+<<<<<<< HEAD
             'use_sim_time': 'false',   # <--- ADD THIS
+=======
+            'use_sim_time': 'true',   # <--- ADD THIS
+>>>>>>> dab9225 (trash trash)
             'other_target_topic': f'/{TB1_NAME}/my_target_topic',
             'yields': 'true',
             'stop_on_found': 'false',
