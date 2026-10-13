@@ -284,16 +284,20 @@ class PathMPC(Node):
         self.latest_map = msg
 
     def timer_callback(self):
+        tb3_1_stop = False
+        tb3_2_stop = False
         if len(self.path1) == 0:
             new_cmd = TwistStamped()
             new_cmd.twist.linear.x = 0.0
             new_cmd.twist.angular.z = 0.0
             self.cmd_vel_publisher1.publish(new_cmd)
+            tb3_1_stop = True
         if len(self.path2) == 0:
             new_cmd = TwistStamped()
             new_cmd.twist.linear.x = 0.0
             new_cmd.twist.angular.z = 0.0
-            self.cmd_vel_publisher1.publish(new_cmd)
+            self.cmd_vel_publisher2.publish(new_cmd)
+            tb3_2_stop = True
         if self.turn_off:
             return None
 
@@ -306,7 +310,7 @@ class PathMPC(Node):
                 new_cmd.twist.angular.z = 0.0
                 self.cmd_vel_publisher1.publish(new_cmd)
                 self.stopped1 = True
-        else:
+        if not tb3_1_stop:
             p0 = np.array([self.x1, self.y1, self.yaw1])
             self.mpc1.x0 = p0
             p = p0.copy()
@@ -355,7 +359,7 @@ class PathMPC(Node):
                 new_cmd.twist.angular.z = 0.0
                 self.cmd_vel_publisher2.publish(new_cmd)
                 self.stopped2 = True
-        else:
+        if not tb3_2_stop:
             p0 = np.array([self.x2, self.y2, self.yaw2])
             self.mpc2.x0 = p0
             p = p0.copy()

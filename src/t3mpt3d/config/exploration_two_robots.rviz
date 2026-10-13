@@ -371,7 +371,7 @@ Visualization Manager:
       Enabled: true
       Name: Marker
       Namespaces:
-        goal_frontier: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -384,7 +384,7 @@ Visualization Manager:
       Enabled: true
       Name: Marker
       Namespaces:
-        goal_frontier: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -397,7 +397,7 @@ Visualization Manager:
       Enabled: true
       Name: Marker
       Namespaces:
-        rrt: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -410,7 +410,7 @@ Visualization Manager:
       Enabled: true
       Name: Marker
       Namespaces:
-        rrt: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
