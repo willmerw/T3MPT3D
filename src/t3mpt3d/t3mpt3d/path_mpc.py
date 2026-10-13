@@ -24,9 +24,9 @@ class PathMPC(Node):
         tb2_cmd_vel:str = self.get_parameter('tb2_cmd_vel').get_parameter_value().string_value
         tb1_odom:str = self.get_parameter('tb1_odom').get_parameter_value().string_value
         tb2_odom:str = self.get_parameter('tb2_odom').get_parameter_value().string_value
-        tb1_found_goal:bool = self.get_parameter('tb1_found_goal').get_parameter_value().bool_value
-        tb2_found_goal:bool = self.get_parameter('tb2_found_goal').get_parameter_value().bool_value
-        rivstart:bool = self.get_parameter('rivstart').get_parameter_value().bool_value
+        tb1_found_goal:str = self.get_parameter('tb1_found_goal').get_parameter_value().string_value
+        tb2_found_goal:str = self.get_parameter('tb2_found_goal').get_parameter_value().string_value
+        rivstart:str = self.get_parameter('rivstart').get_parameter_value().string_value
 
         self.cmd_vel_publisher1 = self.create_publisher(TwistStamped, tb1_cmd_vel, 10)
         self.cmd_vel_publisher2 = self.create_publisher(TwistStamped, tb2_cmd_vel, 10)
@@ -54,9 +54,6 @@ class PathMPC(Node):
         self.path_header1=""
         self.path2 = []
         self.path_header2=""
-
-        self.traj1 = []
-        self.traj2 = []
 
         self.latest_map = None
 
