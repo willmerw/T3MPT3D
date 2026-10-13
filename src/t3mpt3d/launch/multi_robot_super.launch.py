@@ -27,9 +27,9 @@ def generate_launch_description():
     nav_tb3_1 = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(slam_nav_launch),
         launch_arguments={
-            'namespace': 'tb3_1',
+            'namespace': 'turtlebot1',
             'use_sim_time': 'true',   # <--- ADD THIS
-            'other_target_topic': '/tb3_2/my_target_topic',
+            'other_target_topic': '/turtlebot2/my_target_topic',
             'yields': 'false',
             'stop_on_found': 'false',
             'min_frontiers_cells': '20',
@@ -42,9 +42,9 @@ def generate_launch_description():
     nav_tb3_2 = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(slam_nav_launch),
         launch_arguments={
-            'namespace': 'tb3_2',
+            'namespace': 'turtlebot2',
             'use_sim_time': 'true',   # <--- ADD THIS
-            'other_target_topic': '/tb3_1/my_target_topic',
+            'other_target_topic': '/turtlebot1/my_target_topic',
             'yields': 'true',
             'stop_on_found': 'false',
             'min_frontiers_cells': '20',
