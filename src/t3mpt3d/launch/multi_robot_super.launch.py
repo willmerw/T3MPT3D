@@ -34,6 +34,7 @@ def generate_launch_description():
             'stop_on_found': 'false',
             'min_frontiers_cells': '20',
             'plank_index': '0',
+            'segment_size': '0.02'
         }.items()
     )
 
@@ -47,7 +48,8 @@ def generate_launch_description():
             'yields': 'true',
             'stop_on_found': 'false',
             'min_frontiers_cells': '20',
-            'plank_index': '1'
+            'plank_index': '1',
+            'segment_size': '0.02'
 
         }.items()
     )

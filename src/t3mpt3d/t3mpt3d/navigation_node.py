@@ -159,7 +159,7 @@ class PathPlannerNode(Node):
         self.declare_parameter('move_to_plank_topic', '/move_to_plank')
 
 
-        self.declare_parameter("segment_size", 0.1)
+        self.declare_parameter("segment_size", 0.02)
         self.declare_parameter('tf_timeout_sec', 0.5)
         self.declare_parameter("goal_radius", 0.3)
         self.declare_parameter("goal_bias", 0.1)

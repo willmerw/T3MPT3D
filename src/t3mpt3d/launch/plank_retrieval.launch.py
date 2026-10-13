@@ -31,6 +31,7 @@ def generate_launch_description():
     stop_on_found = LaunchConfiguration('stop_on_found')
     min_frontiers_cells = LaunchConfiguration('min_frontiers_cells')
     plank_index = LaunchConfiguration('plank_index')
+    segment_size = LaunchConfiguration('segment_size')
 
     # 1. Declare Launch Arguments
     declare_namespace_cmd = DeclareLaunchArgument(
@@ -65,6 +66,9 @@ def generate_launch_description():
     declare_min_frontiers_cells = DeclareLaunchArgument('min_frontiers_cells', default_value='20')
 
     declare_plank_index = DeclareLaunchArgument('plank_index', default_value='0')
+
+    declare_segment_size = DeclareLaunchArgument('segment_size', default_value='0.02')
+
     # 2. Custom Nodes and RViz
     custom_nodes = GroupAction([
         PushRosNamespace(namespace),
@@ -86,6 +90,7 @@ def generate_launch_description():
                         "stop_on_found": stop_on_found,
                         'min_frontiers_cells': min_frontiers_cells,
                         'plank_index': plank_index,
+                        'segment_size': segment_size,
                         }],
              remappings=[('map', '/map'), ('frontiers', '/frontiers')],
              output='screen'
@@ -178,7 +183,7 @@ def generate_launch_description():
     ld.add_action(declare_stop_on_found)
     ld.add_action(declare_min_frontiers_cells)
     ld.add_action(declare_plank_index)
-
+    ld.add_action(declare_segment_size)
     ld.add_action(custom_nodes)
     ld.add_action(start_async_slam_toolbox_node)
     ld.add_action(configure_event)

@@ -39,7 +39,7 @@ class PathMPC(Node):
         self.yaw2 = 0.0
 
         self.path1 = []
-        self.path_header1="" 
+        self.path_header1=""
         self.path2 = []
         self.path_header2=""
 
@@ -146,10 +146,10 @@ class PathMPC(Node):
             ),
             ub=0.0
         )
-        
+
         mpc.set_nl_cons(
             'closest_obstacle',
-            0.1 ** 2 - ((model.x['x'] - model.tvp['obs_x']) ** 2 
+            0.1 ** 2 - ((model.x['x'] - model.tvp['obs_x']) ** 2
                         + (model.x['y'] - model.tvp['obs_y']) ** 2),
             ub=0.0,
             soft_constraint=False
@@ -193,7 +193,7 @@ class PathMPC(Node):
 
         mpc.set_tvp_fun(tvp_fun)
 
-        
+
         return mpc
 
     def closest_path_index(self, path, x, y):
@@ -282,7 +282,7 @@ class PathMPC(Node):
 
     def map_callback(self, msg):
         self.latest_map = msg
-    
+
     def timer_callback(self):
         if len(self.path1) == 0:
             return None
