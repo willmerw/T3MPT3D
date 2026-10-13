@@ -6,7 +6,7 @@ from rclpy.duration import Duration
 from nav_msgs.msg import Odometry, OccupancyGrid
 from tf2_ros import Buffer, TransformListener
 
-TARGET_FRAME = 'tb3_1/map'
+
 
 class MultiRobotOdomTransformer(Node):
     def __init__(self):
@@ -17,6 +17,9 @@ class MultiRobotOdomTransformer(Node):
 
         if not self.has_parameter('robots'):
             self.declare_parameter('robots', ['turtlebot1', 'turtlebot2'])
+
+        self.declare_parameter('target_frame', '/turtlebot1/map')
+        self.TARGET_FRAME = self.get_parameter('target_frame').get_parameter_value().string_value
 
         self.map_sub = self.create_subscription(OccupancyGrid, '/map', self._on_map, 10)
         self.map_found = False
@@ -55,7 +58,7 @@ class MultiRobotOdomTransformer(Node):
 
     def odom_callback(self, msg: Odometry, robot_name: str):
         try:
-            target_frame = TARGET_FRAME
+            target_frame = self.TARGET_FRAME
             source_frame = msg.header.frame_id
 
             transform = self.tf_buffer.lookup_transform(

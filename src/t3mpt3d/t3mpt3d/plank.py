@@ -26,9 +26,20 @@ class PlankMPC(Node):
                     reliability=ReliabilityPolicy.RELIABLE
                 )
 
+        self.declare_parameter('tb1_cmd_vel', '/turtlebot1/cmd_vel')
+        self.declare_parameter('tb2_cmd_vel', '/turtlebot2/cmd_vel')
 
-        self.r1_pub = self.create_publisher(TwistStamped, '/turtlebot1/cmd_vel', 10)
-        self.r2_pub = self.create_publisher(TwistStamped, '/turtlebot2/cmd_vel', 10)
+        self.declare_parameter('tb1_odom_world', '/turtlebot1/odom_world')
+        self.declare_parameter('tb2_odom_world', '/turtlebot2/odom_world')
+
+        tb1_cmd_vel: str = self.get_parameter('tb1_cmd_vel').get_parameter_value().string_value
+        tb2_cmd_vel: str = self.get_parameter('tb1_cmd_vel').get_parameter_value().string_value
+
+        tb1_odom_world: str = self.get_parameter('tb1_odom_world').get_parameter_value().string_value
+        tb2_odom_world: str = self.get_parameter('tb1_odom_world').get_parameter_value().string_value
+
+        self.r1_pub = self.create_publisher(TwistStamped, tb1_cmd_vel, 10)
+        self.r2_pub = self.create_publisher(TwistStamped, tb2_cmd_vel, 10)
         self.mpc_traj_publisher = self.create_publisher(Path, '/mpc_trajectory', 10)
         self.traj_publisher = self.create_publisher(Path, '/trajectory', 10)
         self.plank_vis_pub = self.create_publisher(Marker, '/plank_vis', vis_qos)
@@ -49,10 +60,10 @@ class PlankMPC(Node):
         self.start_sub = self.create_subscription(Bool, '/rivstart',self._on_start,10)
 
         self.odom1_sub = message_filters.Subscriber(
-            self, Odometry, '/turtlebot1/odom_world',10
+            self, Odometry, tb1_odom_world,10
         )
         self.odom2_sub = message_filters.Subscriber(
-            self, Odometry, '/turtlebot2/odom_world',10
+            self, Odometry, tb2_odom_world,10
         )
         self.sync = message_filters.ApproximateTimeSynchronizer(
             [self.odom1_sub, self.odom2_sub], queue_size=10, slop=0.05
@@ -123,6 +134,8 @@ class PlankMPC(Node):
         if not self.start:
             return
 
+        if not self.path_received:
+            return
         self.p1[0] = odom1_msg.pose.pose.position.x
         self.p1[1] = odom1_msg.pose.pose.position.y
         q1 = odom1_msg.pose.pose.orientation
