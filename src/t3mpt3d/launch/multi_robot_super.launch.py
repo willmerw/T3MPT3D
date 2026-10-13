@@ -27,7 +27,10 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(gazebo_multi_launch)
     )
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> dcc1928 (launch fix)
     nav_tb3_1 = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(slam_nav_launch),
         launch_arguments={
@@ -42,7 +45,11 @@ def generate_launch_description():
         }.items()
     )
 
+<<<<<<< HEAD
     # Launch SLAM and Navigation for Robot 2
+=======
+    #Launch SLAM and Navigation for Robot 2
+>>>>>>> dcc1928 (launch fix)
     nav_tb3_2 = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(slam_nav_launch),
         launch_arguments={
@@ -55,7 +62,10 @@ def generate_launch_description():
             'plank_index': '1',
             'segment_size': '0.02'
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> dcc1928 (launch fix)
         }.items()
     )
 
@@ -138,8 +148,8 @@ def generate_launch_description():
     # 3. ADD THE NODE TO THE RETURN LIST
     return LaunchDescription([
         simulation,
-        #nav_tb3_1,
-        #nav_tb3_2,
+        nav_tb3_1,
+        nav_tb3_2,
         #mission_node,
         map_merge_node,
         tf_world_to_tb3_1, # <--- Added
