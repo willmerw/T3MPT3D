@@ -27,35 +27,37 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(gazebo_multi_launch)
     )
 
-    # nav_tb3_1 = IncludeLaunchDescription(
-    #     PythonLaunchDescriptionSource(slam_nav_launch),
-    #     launch_arguments={
-    #         'namespace': TB1_NAME,
-    #         'use_sim_time': 'true',   # <--- ADD THIS
-    #         'other_target_topic': f'/{TB2_NAME}/my_target_topic',
-    #         'yields': 'false',
-    #         'stop_on_found': 'false',
-    #         'min_frontiers_cells': '20',
-    #         'plank_index': '0',
-    #         'segment_size': '0.02'
-    #     }.items()
-    # )
+
+    nav_tb3_1 = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(slam_nav_launch),
+        launch_arguments={
+            'namespace': TB1_NAME,
+            'use_sim_time': 'true',   # <--- ADD THIS
+            'other_target_topic': f'/{TB2_NAME}/my_target_topic',
+            'yields': 'false',
+            'stop_on_found': 'false',
+            'min_frontiers_cells': '20',
+            'plank_index': '0',
+            'segment_size': '0.02'
+        }.items()
+    )
 
     # Launch SLAM and Navigation for Robot 2
-    # nav_tb3_2 = IncludeLaunchDescription(
-    #     PythonLaunchDescriptionSource(slam_nav_launch),
-    #     launch_arguments={
-    #         'namespace': TB2_NAME,
-    #         'use_sim_time': 'true',   # <--- ADD THIS
-    #         'other_target_topic': f'/{TB1_NAME}/my_target_topic',
-    #         'yields': 'true',
-    #         'stop_on_found': 'false',
-    #         'min_frontiers_cells': '20',
-    #         'plank_index': '1',
-    #         'segment_size': '0.02'
+    nav_tb3_2 = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(slam_nav_launch),
+        launch_arguments={
+            'namespace': TB2_NAME,
+            'use_sim_time': 'true',   # <--- ADD THIS
+            'other_target_topic': f'/{TB1_NAME}/my_target_topic',
+            'yields': 'true',
+            'stop_on_found': 'false',
+            'min_frontiers_cells': '20',
+            'plank_index': '1',
+            'segment_size': '0.02'
 
-    #     }.items()
-    # )
+
+        }.items()
+    )
 
     # ==========================================
     # 2. DEFINE YOUR EXTRA NODE HERE
