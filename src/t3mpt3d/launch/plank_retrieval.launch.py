@@ -90,13 +90,13 @@ def generate_launch_description():
              remappings=[('map', '/map'), ('frontiers', '/frontiers')],
              output='screen'
          ),
-         Node(
-             package='t3mpt3d',
-             executable='path_follower_node',
-             name='path_follower_node',
-             parameters=[{'use_sim_time': use_sim_time,
-                          'base_frame': [namespace, '/base_footprint']}],
-        ),
+        #  Node(
+        #      package='t3mpt3d',
+        #      executable='path_follower_node',
+        #      name='path_follower_node',
+        #      parameters=[{'use_sim_time': use_sim_time,
+        #                   'base_frame': [namespace, '/base_footprint']}],
+        # ),
         # Node(
         #     package='rviz2',
         #     executable='rviz2',
