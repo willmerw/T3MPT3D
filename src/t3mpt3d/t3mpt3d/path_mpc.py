@@ -284,6 +284,8 @@ class PathMPC(Node):
         self.latest_map = msg
     
     def timer_callback(self):
+        if len(self.path1) == 0:
+            return None
         if self.turn_off:
             return None
 
