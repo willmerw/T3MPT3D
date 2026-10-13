@@ -41,12 +41,12 @@ def generate_launch_description():
         }.items()
     )
 
-    # Launch SLAM and Navigation for Robot 2
+    #Launch SLAM and Navigation for Robot 2
     nav_tb3_2 = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(slam_nav_launch),
         launch_arguments={
             'namespace': TB2_NAME,
-            'use_sim_time': 'true',   # <--- ADD THIS
+            'use_sim_time': 'false',   # <--- ADD THIS
             'other_target_topic': f'/{TB1_NAME}/my_target_topic',
             'yields': 'true',
             'stop_on_found': 'false',
@@ -66,7 +66,7 @@ def generate_launch_description():
         executable='mission_control_node',      # Replace with your executable name
         name='mission_control',
         output='screen',
-        parameters=[{'use_sim_time': True}] # Good practice if relying on Gazebo time
+        parameters=[{'use_sim_time': False}] # Good practice if relying on Gazebo time
     )
 
     map_merge_node = Node(
@@ -74,27 +74,38 @@ def generate_launch_description():
         executable='map_merge_node',      # Replace with your executable name
         name='map_merge',
         output='screen',
-        parameters=[{'use_sim_time': True}] # Good practice if relying on Gazebo time
+        parameters=[{'use_sim_time': False}] # Good practice if relying on Gazebo time
     )
 
     frontier_detector = Node(
           package='t3mpt3d',
           executable='frontier_detector_node',
-          parameters=[{'use_sim_time': True}],
+          parameters=[{'use_sim_time': False}],
         )
 
     odom_to_world = Node(
         package='t3mpt3d',
         executable='odom_to_world_node',
         name='odom_to_world_node',
-        parameters=[{'use_sim_time': True}]
+        parameters=[{'use_sim_time': False}],
+        launch_arguments = {
+            'robots':f'[{TB1_NAME},{TB2_NAME}]',
+            'target_frame':f'{TB1_NAME}/map'
+        }
     )
-    pnk_node = Node(
+
+    plank_controller_node = Node(
             package='t3mpt3d',                  # Replace with your package name
-            executable='plank_node',      # Replace with your executable name
+            executable='plank',      # Replace with your executable name
             name='plank_node',
             output='screen',
-            parameters=[{'use_sim_time': True}] # Good practice if relying on Gazebo time
+            parameters=[{'use_sim_time': False}] # Good practice if relying on Gazebo time
+            launch_arguments={
+                'tb1_cmd_vel': f'{TB1_NAME}/cmd_vel',
+                'tb2_cmd_vel': f'{TB2_NAME}/cmd_vel',
+                'tb1_odom_world': f'{TB1_NAME}/odom_world',
+                'tb2_odom_world': f'{TB2_NAME}/odom_world',
+                    }.items()
         )
     # Bridge for tb3_1 (Spawned at x=-2.0, y=-0.5)
     tf_world_to_tb3_1 = Node(
@@ -103,7 +114,7 @@ def generate_launch_description():
         name='static_tf_tb3_1',
         # Removed --x, --y, etc. Just pure numbers in order: X, Y, Z, Yaw, Pitch, Roll, Parent, Child
         arguments=['0.0', '0.0', '0.0', '0.0', '0.0', '0.0', 'world', f'{TB1_NAME}/map'], #ALWAYS (0,0)
-        parameters=[{'use_sim_time': True}]
+        parameters=[{'use_sim_time': False}]
     )
 
     # Bridge for tb3_2 (Spawned at x=-2.0, y=0.5)
@@ -112,14 +123,14 @@ def generate_launch_description():
         executable='static_transform_publisher',
         name='static_tf_tb3_2',
         arguments=['0.0', '1.0', '0.0', '0.0', '0.0', '0.0', 'world', f'{TB2_NAME}/map'],
-        parameters=[{'use_sim_time': True}]
+        parameters=[{'use_sim_time': False}]
     )
     path_follow = Node(
              package='t3mpt3d',
              executable='path_mpc',
              name='path_mpc',
              output='screen',
-             parameters=[{'use_sim_time': True}] # Good practice if relying on Gazebo time
+             parameters=[{'use_sim_time': False}] # Good practice if relying on Gazebo time
     )
 
     # 3. ADD THE NODE TO THE RETURN LIST
