@@ -8,6 +8,9 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 # 1. IMPORT NODE HERE
 from launch_ros.actions import Node
 
+TB1_NAME = "turtlebot2"
+TB2_NAME = "turtlebot5"
+
 def generate_launch_description():
     # Get the paths to your packages
     gazebo_pkg = get_package_share_directory('turtlebot3_gazebo')
@@ -27,9 +30,9 @@ def generate_launch_description():
     nav_tb3_1 = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(slam_nav_launch),
         launch_arguments={
-            'namespace': 'turtlebot1',
+            'namespace': TB1_NAME,
             'use_sim_time': 'true',   # <--- ADD THIS
-            'other_target_topic': '/turtlebot2/my_target_topic',
+            'other_target_topic': f'/{TB2_NAME}/my_target_topic',
             'yields': 'false',
             'stop_on_found': 'false',
             'min_frontiers_cells': '20',
@@ -42,9 +45,9 @@ def generate_launch_description():
     nav_tb3_2 = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(slam_nav_launch),
         launch_arguments={
-            'namespace': 'turtlebot2',
+            'namespace': TB2_NAME,
             'use_sim_time': 'true',   # <--- ADD THIS
-            'other_target_topic': '/turtlebot1/my_target_topic',
+            'other_target_topic': f'/{TB1_NAME}/my_target_topic',
             'yields': 'true',
             'stop_on_found': 'false',
             'min_frontiers_cells': '20',
@@ -99,7 +102,7 @@ def generate_launch_description():
         executable='static_transform_publisher',
         name='static_tf_tb3_1',
         # Removed --x, --y, etc. Just pure numbers in order: X, Y, Z, Yaw, Pitch, Roll, Parent, Child
-        arguments=['0.0', '0.0', '0.0', '0.0', '0.0', '0.0', 'world', 'tb3_1/map'], #ALWAYS (0,0)
+        arguments=['0.0', '0.0', '0.0', '0.0', '0.0', '0.0', 'world', f'{TB1_NAME}/map'], #ALWAYS (0,0)
         parameters=[{'use_sim_time': True}]
     )
 
@@ -108,7 +111,7 @@ def generate_launch_description():
         package='tf2_ros',
         executable='static_transform_publisher',
         name='static_tf_tb3_2',
-        arguments=['0.0', '1.0', '0.0', '0.0', '0.0', '0.0', 'world', 'tb3_2/map'],
+        arguments=['0.0', '1.0', '0.0', '0.0', '0.0', '0.0', 'world', f'{TB2_NAME}/map'],
         parameters=[{'use_sim_time': True}]
     )
     path_follow = Node(
@@ -121,7 +124,7 @@ def generate_launch_description():
 
     # 3. ADD THE NODE TO THE RETURN LIST
     return LaunchDescription([
-        #simulation,
+        simulation,
         nav_tb3_1,
         nav_tb3_2,
         #mission_node,
