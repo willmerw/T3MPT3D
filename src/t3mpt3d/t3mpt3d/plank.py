@@ -27,8 +27,8 @@ class PlankMPC(Node):
                 )
 
 
-        self.r1_pub = self.create_publisher(TwistStamped, '/tb3_1/cmd_vel', 10)
-        self.r2_pub = self.create_publisher(TwistStamped, '/tb3_2/cmd_vel', 10)
+        self.r1_pub = self.create_publisher(TwistStamped, '/turtlebot1/cmd_vel', 10)
+        self.r2_pub = self.create_publisher(TwistStamped, '/turtlebot2/cmd_vel', 10)
         self.mpc_traj_publisher = self.create_publisher(Path, '/mpc_trajectory', 10)
         self.traj_publisher = self.create_publisher(Path, '/trajectory', 10)
         self.plank_vis_pub = self.create_publisher(Marker, '/plank_vis', vis_qos)
@@ -49,10 +49,10 @@ class PlankMPC(Node):
         self.start_sub = self.create_subscription(Bool, '/rivstart',self._on_start,10)
 
         self.odom1_sub = message_filters.Subscriber(
-            self, Odometry, '/tb3_1/odom_world',10
+            self, Odometry, '/turtlebot1/odom_world',10
         )
         self.odom2_sub = message_filters.Subscriber(
-            self, Odometry, '/tb3_2/odom_world',10
+            self, Odometry, '/turtlebot2/odom_world',10
         )
         self.sync = message_filters.ApproximateTimeSynchronizer(
             [self.odom1_sub, self.odom2_sub], queue_size=10, slop=0.05

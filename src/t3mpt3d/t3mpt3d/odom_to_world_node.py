@@ -16,7 +16,7 @@ class MultiRobotOdomTransformer(Node):
             self.declare_parameter('use_sim_time', True)
 
         if not self.has_parameter('robots'):
-            self.declare_parameter('robots', ['tb3_1', 'tb3_2'])
+            self.declare_parameter('robots', ['turtlebot1', 'turtlebot2'])
 
         self.map_sub = self.create_subscription(OccupancyGrid, '/map', self._on_map, 10)
         self.map_found = False
