@@ -31,7 +31,7 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(slam_nav_launch),
         launch_arguments={
             'namespace': TB1_NAME,
-            'use_sim_time': 'true',   # <--- ADD THIS
+            'use_sim_time': 'false',   # <--- ADD THIS
             'other_target_topic': f'/{TB2_NAME}/my_target_topic',
             'yields': 'false',
             'stop_on_found': 'false',
@@ -74,7 +74,11 @@ def generate_launch_description():
         executable='map_merge_node',      # Replace with your executable name
         name='map_merge',
         output='screen',
-        parameters=[{'use_sim_time': False}] # Good practice if relying on Gazebo time
+        parameters=[{'use_sim_time': False,
+                     'tb1_map_topic': f"{TB1_NAME}/map",
+                     'tb2_map_topic': f"{TB2_NAME}/map",
+
+                     }] # Good practice if relying on Gazebo time
     )
 
     frontier_detector = Node(
@@ -128,7 +132,9 @@ def generate_launch_description():
              executable='path_mpc',
              name='path_mpc',
              output='screen',
-             parameters=[{'use_sim_time': False}] # Good practice if relying on Gazebo time
+             parameters=[{'use_sim_time': False,
+
+                          }] # Good practice if relying on Gazebo time
     )
 
     # 3. ADD THE NODE TO THE RETURN LIST
@@ -136,7 +142,7 @@ def generate_launch_description():
         #simulation,
         nav_tb3_1,
         nav_tb3_2,
-        #mission_node,
+        mission_node,
         map_merge_node,
         tf_world_to_tb3_1, # <--- Added
         tf_world_to_tb3_2,  # <--- Added

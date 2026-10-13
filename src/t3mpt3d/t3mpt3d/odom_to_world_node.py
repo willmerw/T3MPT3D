@@ -59,7 +59,7 @@ class MultiRobotOdomTransformer(Node):
     def odom_callback(self, msg: Odometry, robot_name: str):
         try:
             target_frame = self.TARGET_FRAME
-            source_frame = msg.header.frame_id
+            source_frame = msg.header.frame_id.lstrip('/')
 
             transform = self.tf_buffer.lookup_transform(
                 target_frame,

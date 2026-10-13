@@ -115,7 +115,7 @@ class MissionControlNode(Node):
 
         self.get_logger().info(f"Mission Control initialized for robots: {self.robots}")
         if self.auto_start:
-            self.start_timer = self.create_timer(1.0, self.start_robot)
+            self.start_timer = self.create_timer(10.0, self.start_robot)
 
     def start_robot(self):
         self.get_logger().info(f"is this a diesel engine because this shit rolling coal {self.auto_start}")

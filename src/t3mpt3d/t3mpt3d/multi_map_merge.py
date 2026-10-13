@@ -14,8 +14,13 @@ class MultiMapMerge(Node):
     def __init__(self):
         super().__init__('multi_map_merge')
 
+        self.declare_parameter("tb1_map_topic", "tb1_map_topic")
+        self.declare_parameter("tb2_map_topic", "tb2_map_topic")
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
+
+        tb1: str = self.get_parameter("tb1_map_topic").get_parameter_value().string_value
+        tb2: str = self.get_parameter("tb2_map_topic").get_parameter_value().string_value
 
         map_qos = QoSProfile(
             depth=1,
@@ -23,8 +28,8 @@ class MultiMapMerge(Node):
             reliability=QoSReliabilityPolicy.RELIABLE
         )
 
-        self.sub_map1 = message_filters.Subscriber(self, OccupancyGrid, '/tb3_1/map', qos_profile=map_qos)
-        self.sub_map2 = message_filters.Subscriber(self, OccupancyGrid, '/tb3_2/map', qos_profile=map_qos)
+        self.sub_map1 = message_filters.Subscriber(self, OccupancyGrid, tb1, qos_profile=map_qos)
+        self.sub_map2 = message_filters.Subscriber(self, OccupancyGrid, tb2, qos_profile=map_qos)
 
         self.ts = message_filters.ApproximateTimeSynchronizer(
             [self.sub_map1, self.sub_map2],
