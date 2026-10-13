@@ -1,9 +1,11 @@
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Bool
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from geometry_msgs.msg import PoseStamped, PolygonStamped,Point32
 import numpy as np
 from functools import partial
+import math as math
 
 
 
@@ -17,24 +19,29 @@ class MissionControlNode(Node):
         self.declare_parameter("exploration_trigger", "/exploration_trigger")
         self.declare_parameter("plank_pos", "/plank")
         self.declare_parameter("plank_reached", "/plank_reached")
-        self.declare_parameter("model_trigger", "/model")
-        self.declare_parameter("goal_pose", "/goal_pose")
+        self.declare_parameter("riv_start_trigger", "/rivstart")
+        self.declare_parameter("goal_pose", "/goal")
         self.declare_parameter("reached_topic", "/reached")
         self.declare_parameter("found_plank","/found")
-        self.declare_parameter("low_fronteirs","/found")
-        self.declare_parameter("auto_start", False)
+        self.declare_parameter("low_fronteirs","/low")
+        self.declare_parameter("move_to_plank","/move_to_plank")
+        self.declare_parameter("auto_start", True)
 
         # 2. Get parameter values (these act as our base topic suffixes)
         exploration_trigger_suffix = self.get_parameter("exploration_trigger").value
         plank_pos_topic = self.get_parameter("plank_pos").value
         plank_reached_suffix = self.get_parameter("plank_reached").value
         reached_suffix = self.get_parameter("reached_topic").value
-        goal_pose_suffix = self.get_parameter("goal_pose").value
-        model_trigger_suffix = self.get_parameter("model_trigger").value
-        found_plank_suffix = self.get_parameter("found_plank").value
+        goal_topic = self.get_parameter("goal_pose").value
+        riv_start_topic = self.get_parameter("riv_start_trigger").value
+        found_plank_topic = self.get_parameter("found_plank").value
         low_fronteir_topic = self.get_parameter("low_fronteirs").value
-
+        move_to_plank_topic = self.get_parameter("move_to_plank").value
+        self.auto_start =self.get_parameter("auto_start").value
         # 3. Create dictionaries to hold publishers and subscribers per robot
+        plank_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                                       reliability=ReliabilityPolicy.RELIABLE)
+
         self.goal_pose_publishers = {}
         self.model_trigger_publishers = {}
         self.exploration_trigger_publishers = {}
@@ -42,50 +49,53 @@ class MissionControlNode(Node):
         self.plank_pos_subscriptions = {}
         self.plank_reached_subscriptions = {}
         self.reached_subscriptions = {}
-        self.plank_pos1 = [2,3]
-        self.plank_pos2 =[1,3]
+        self.plank_pos1 = [0.0,0.0]
+        self.plank_pos2 =[1.0,0.0]
+        self.goal = [0,0,0]
         self.found_plank = False
         self.reached =[]
+        self.started = False
         #publishers
-        self.model_trigger_publishers= self.create_publisher(
-                                            Bool, model_topic, 10
+        self.riv_start_publishers= self.create_publisher(
+                                            Bool, riv_start_topic, 10
                                         )
+        self.goal_publisher= self.create_publisher(
+                                                    PoseStamped, goal_topic, 10
+                                                )
         self.plank_pos_publisher = self.create_publisher(
-                        PolygonStamped, plank_pos_topic, 10
+                        PolygonStamped, plank_pos_topic, plank_qos
                     )
+        self.move_to_plank_publisher = self.create_publisher(
+                            Bool, move_to_plank_topic, plank_qos
+                        )
         #subscribers
         self.found_plank_subcritption =self.create_subscription(
                         Bool, found_plank_topic,
-                        self.found_plank_callback, 10
+                        self.found_plank_callback, plank_qos
                     )
-        self.found_plank_subcritption =self.create_subscription(
-                                Bool, found_plank_topic,
-                                self.found_plank_callback, 10
-                            )
         self.low_fronteirs_sbuscription = self.create_subscription(
-                                Bool,found_plank_topic,
-                                self.lowfronteirs,10
+                                Bool,low_fronteir_topic,
+                            self.low_fronteirs_callback,plank_qos
                             )
+
         # 4. Loop through each robot to create its specific topics
         for robot in self.robots:
             # Construct the namespaced topics (e.g., "/tb3_1/plank_reached")
-            goal_topic = f"/{robot}{goal_pose_suffix}"
-            model_topic = f"/{robot}{model_trigger_suffix}"
+
             explore_topic = f"/{robot}{exploration_trigger_suffix}"
 
 
             plank_reached_topic = f"/{robot}{plank_reached_suffix}"
             reached_topic = f"/{robot}{reached_suffix}"
-            found_plank_topic =f"/{robot}{found_plank_suffix}"
 
             # --- Publishers ---
             self.goal_pose_publishers[robot] = self.create_publisher(
-                PoseStamped, goal_topic, 10
+                PoseStamped, goal_topic, plank_qos
             )
 
 
             self.exploration_trigger_publishers[robot] = self.create_publisher(
-                Bool, explore_topic, 10
+                Bool, explore_topic, plank_qos
             )
 
             # --- Subscribers ---
@@ -93,13 +103,13 @@ class MissionControlNode(Node):
             # so the callback knows which robot sent the message.
 
 
-            self.plank_reached_subscriptions[robot] = self.create_subscription(
-                Bool, plank_reached_topic,
-                partial(self.plank_reached_callback, robot_name=robot), 10
-            )
+            # self.plank_reached_subscriptions[robot] = self.create_subscription(
+            #     Bool, plank_reached_topic,
+            #     partial(self.plank_reached_callback, robot_name=robot), plank_qos
+            # )
             self.reached_subscriptions[robot] = self.create_subscription(
                 Bool, reached_topic,
-                partial(self.reached_callback, robot_name=robot), 10
+                partial(self.reached_callback, robot_name=robot), plank_qos
             )
 
 
@@ -108,22 +118,24 @@ class MissionControlNode(Node):
             self.start_timer = self.create_timer(1.0, self.start_robot)
 
     def start_robot(self):
+        self.get_logger().info(f"is this a diesel engine because this shit rolling coal {self.auto_start}")
         self.start_timer.cancel()
         self.plank_pos_pub()
+
     def go_to_plank_pub(self):
         msg = Bool()
         msg.data = True
-        self.reached_pub.publish(msg)
+        self.move_to_plank_publisher.publish(msg)
 
 
-    def plank_reached_callback(self, msg, robot_name):
-        pass
     def low_fronteirs_callback(self,msg):
         if msg.data is True and self.found_plank is True:
+            self.get_logger().info("This was the last seaweed, time to walk the plank")
             self.go_to_plank_pub()
 
     def found_plank_callback(self,msg):
         if msg.data is True:
+            self.get_logger().info("No Time to walk the plank")
             self.found_plank = True
 
 
@@ -138,8 +150,8 @@ class MissionControlNode(Node):
         p2 = Point32(x=self.plank_pos2[0], y =self.plank_pos2[1], z=0.0)
         msg.polygon.points = [p1, p2]
 
-        self.publisher_.publish(msg)
-        self.get_logger().info('Published plank polygon')
+        self.plank_pos_publisher.publish(msg)
+        self.get_logger().info('Watch out this publisher will ricochet')
 
         #   self.mission_log.set_plank_leader(msg.pose.position, robot_name)
 
@@ -151,43 +163,50 @@ class MissionControlNode(Node):
 
 
 
-    def goal_pose_publish(self, robot_name: str, goal: PoseStamped) -> PoseStamped:
-        # 1. Verify we have a publisher for this robot
-        if robot_name not in self.goal_pose_publishers:
-            self.get_logger().error(f"Failed to publish: No goal publisher found for {robot_name}!")
-            return None
+    def goal_pose_publish(self, goal: list) -> PoseStamped:
+    # 1. Verify we have a publisher
 
-        # 2. Update the timestamp to the current time (good ROS practice)
-        goal.header.stamp = self.get_clock().now().to_msg()
+        self.get_logger().info(f"OOOOOOONNNNNN BOOOOOAAARD!")
+        # Construct the PoseStamped from list values
+        msg = PoseStamped()
 
-        # Ensure a frame_id is set (usually "map" or "odom" depending on your setup)
-        if not goal.header.frame_id:
-            goal.header.frame_id = "map"
+        # 2. Header setup
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = "map"
 
-        # 3. Publish using the specific robot's publisher
-        self.goal_pose_publishers[robot_name].publish(goal)
+        # Assume goal is [x, y, yaw]
+        msg.pose.position.x = float(goal[0])
+        msg.pose.position.y = float(goal[1])
+        msg.pose.position.z = 0.0
 
-        self.get_logger().info(f"Published new goal pose for {robot_name}")
+        # Convert planar yaw to quaternion
+        yaw = float(goal[2]) if len(goal) > 2 else 0.0
+        msg.pose.orientation.z = math.sin(yaw / 2.0)
+        msg.pose.orientation.w = math.cos(yaw / 2.0)
 
-        # 4. Return the message as indicated by your type hint
-        return goal
+        # 3. Publish
+        self.goal_publisher.publish(msg)
+
+        # 4. Return message
+        return msg
 
     def reached_callback(self, msg, robot_name):
+        self.get_logger().info(f"below deck ye sea cow! {robot_name}")
         if robot_name not in self.reached:
-            self.reached.append(robot_name) 
-        pass
-    def model_trigger_publish(self, robot_name:str, enable:bool)->Bool:
-        if robot_name not in self.model_trigger_publishers:
-            self.get_logger().error(f"No model publisher found for {robot_name}!")
-            return None
+            self.reached.append(robot_name)
 
+        if len(self.reached) == len(self.robots):
+            enable =True
+            self.started = self.clawstart_publish(enable)
+
+            this = self.goal_pose_publish(self.goal)
+
+    def clawstart_publish(self, enable:bool)->Bool:
+        self.get_logger().info("This old scar Me got From Thi grandest of seaDogs in me water!")
         msg = Bool()
-        msg.data = enable
+        msg.data = True
 
-        self.model_trigger_publishers.publish(msg)
-
-        self.get_logger().info(f"Triggered model for {robot_name} (Value: {enable})")
-
+        self.riv_start_publishers.publish(msg)
         return msg
 
 
