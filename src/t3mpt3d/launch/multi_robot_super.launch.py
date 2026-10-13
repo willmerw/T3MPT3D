@@ -27,10 +27,6 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(gazebo_multi_launch)
     )
 
-<<<<<<< HEAD
-
-=======
->>>>>>> dcc1928 (launch fix)
     nav_tb3_1 = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(slam_nav_launch),
         launch_arguments={
@@ -41,15 +37,11 @@ def generate_launch_description():
             'stop_on_found': 'false',
             'min_frontiers_cells': '20',
             'plank_index': '0',
-            'segment_size': '0.02'
+            'segment_size': '0.02',
         }.items()
     )
 
-<<<<<<< HEAD
     # Launch SLAM and Navigation for Robot 2
-=======
-    #Launch SLAM and Navigation for Robot 2
->>>>>>> dcc1928 (launch fix)
     nav_tb3_2 = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(slam_nav_launch),
         launch_arguments={
@@ -60,12 +52,8 @@ def generate_launch_description():
             'stop_on_found': 'false',
             'min_frontiers_cells': '20',
             'plank_index': '1',
-            'segment_size': '0.02'
+            'segment_size': '0.02',
 
-<<<<<<< HEAD
-
-=======
->>>>>>> dcc1928 (launch fix)
         }.items()
     )
 
@@ -111,7 +99,7 @@ def generate_launch_description():
             executable='plank',      # Replace with your executable name
             name='plank_node',
             output='screen',
-            parameters=[{'use_sim_time': True}] # Good practice if relying on Gazebo time
+            parameters=[{'use_sim_time': True}], # Good practice if relying on Gazebo time
             launch_arguments={
                 'tb1_cmd_vel': f'{TB1_NAME}/cmd_vel',
                 'tb2_cmd_vel': f'{TB2_NAME}/cmd_vel',
