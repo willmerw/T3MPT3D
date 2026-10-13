@@ -17,8 +17,8 @@ class PathMPC(Node):
         self.cmd_vel_publisher2 = self.create_publisher(TwistStamped, '/tb3_2/cmd_vel', 10)
         self.mpc_traj_publisher1 = self.create_publisher(Path, '/tb3_1/mpc_trajectory', 10)
         self.mpc_traj_publisher2 = self.create_publisher(Path, '/tb3_2/mpc_trajectory', 10)
-        self.path_publisher1 = self.create_publisher(Path, '/tb3_1/path', 10)
-        self.path_publisher2 = self.create_publisher(Path, '/tb3_2/path', 10)
+        self.path_publisher1 = self.create_publisher(Path, '/tb3_1/followed_path', 10)
+        self.path_publisher2 = self.create_publisher(Path, '/tb3_2/followed_path', 10)
 
         self.timer = self.create_timer(0.1, self.timer_callback)
 
@@ -27,20 +27,20 @@ class PathMPC(Node):
         self.create_subscription(Bool, '/tb3_1/found_goal', self.found_goal_callback1, 10)
         self.create_subscription(Bool, '/tb3_2/found_goal', self.found_goal_callback2, 10)
         self.create_subscription(Bool, '/model', self.turn_off_callback, 10)
-        self.create_subscription(Path, '/tb3_1/goal_trajectory', self.path_callback1, 10)
-        self.create_subscription(Path, '/tb3_2/goal_trajectory', self.path_callback2, 10)
+        self.create_subscription(Path, '/tb3_1/path', self.path_callback1, 10)
+        self.create_subscription(Path, '/tb3_2/path', self.path_callback2, 10)
         self.create_subscription(OccupancyGrid, 'map', self.map_callback, 10)
 
         self.x1 = 0.0
         self.y1 = 0.0
         self.yaw1 = 0.0
         self.x2 = 0.0
-        self.y2 = 1.0
+        self.y2 = 0.0
         self.yaw2 = 0.0
 
-        self.path1 = [(0, 0), (1, 0), (2, 0), (2, 2)]
+        self.path1 = []
         self.path_header1="" 
-        self.path2 = [(3, 2)]
+        self.path2 = []
         self.path_header2=""
 
         self.traj1 = []
@@ -315,7 +315,6 @@ class PathMPC(Node):
             self.path_publisher1.publish(traj_msg)
 
             u = self.mpc1.make_step(p)
-            self.get_logger().info(f'r1 state=({self.x1:.2f},{self.y1:.2f},{self.yaw1:.2f}) u=({u[0][0]:.3f},{u[1][0]:.3f}) ref0={self.path1[self.closest_path_index(self.path1, self.x1, self.y1)]}')
             x_pred = self.mpc1.data.prediction(('_x', 'x')).flatten()
             y_pred = self.mpc1.data.prediction(('_x', 'y')).flatten()
             self.pred1 = np.column_stack((x_pred, y_pred))
@@ -365,7 +364,6 @@ class PathMPC(Node):
             self.path_publisher2.publish(traj_msg)
 
             u = self.mpc2.make_step(p)
-            self.get_logger().info(f'r1 state=({self.x1:.2f},{self.y1:.2f},{self.yaw1:.2f}) u=({u[0][0]:.3f},{u[1][0]:.3f}) ref0={self.path1[self.closest_path_index(self.path1, self.x1, self.y1)]}')
             x_pred = self.mpc2.data.prediction(('_x', 'x')).flatten()
             y_pred = self.mpc2.data.prediction(('_x', 'y')).flatten()
             self.pred2 = np.column_stack((x_pred, y_pred))

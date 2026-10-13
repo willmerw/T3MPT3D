@@ -109,17 +109,25 @@ def generate_launch_description():
         arguments=['0.0', '1.0', '0.0', '0.0', '0.0', '0.0', 'world', 'tb3_2/map'],
         parameters=[{'use_sim_time': True}]
     )
+    path_follow = Node(
+             package='t3mpt3d',
+             executable='path_mpc',
+             name='path_mpc',
+             output='screen',
+             parameters=[{'use_sim_time': True}] # Good practice if relying on Gazebo time
+    )
 
     # 3. ADD THE NODE TO THE RETURN LIST
     return LaunchDescription([
         simulation,
         nav_tb3_1,
         nav_tb3_2,
-        mission_node,
+        #mission_node,
         map_merge_node,
         tf_world_to_tb3_1, # <--- Added
         tf_world_to_tb3_2,  # <--- Added
         frontier_detector,
-        odom_to_world
+        odom_to_world,
+        path_follow
         #pnk_node   # <--- Added here
     ])
