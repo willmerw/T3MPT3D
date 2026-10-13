@@ -87,14 +87,25 @@ def generate_launch_description():
         package='t3mpt3d',
         executable='odom_to_world_node',
         name='odom_to_world_node',
-        parameters=[{'use_sim_time': True}]
+        parameters=[{'use_sim_time': True}],
+        launch_arguments = {
+            'robots':f'[{TB1_NAME},{TB2_NAME}]',
+            'target_frame':f'{TB1_NAME}/map'
+        }
     )
-    pnk_node = Node(
+
+    plank_controller_node = Node(
             package='t3mpt3d',                  # Replace with your package name
-            executable='plank_node',      # Replace with your executable name
+            executable='plank',      # Replace with your executable name
             name='plank_node',
             output='screen',
             parameters=[{'use_sim_time': True}] # Good practice if relying on Gazebo time
+            launch_arguments={
+                'tb1_cmd_vel': f'{TB1_NAME}/cmd_vel',
+                'tb2_cmd_vel': f'{TB2_NAME}/cmd_vel',
+                'tb1_odom_world': f'{TB1_NAME}/odom_world',
+                'tb2_odom_world': f'{TB2_NAME}/odom_world',
+                    }.items()
         )
     # Bridge for tb3_1 (Spawned at x=-2.0, y=-0.5)
     tf_world_to_tb3_1 = Node(
