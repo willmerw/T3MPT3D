@@ -3,7 +3,6 @@ import casadi as ca
 from casadi import vertcat, horzcat, DM # Importing specific functions from casadi for symbolic mathematics
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from std_msgs.msg import String, Bool
 from geometry_msgs.msg import TwistStamped, Pose, PoseStamped
 from nav_msgs.msg import Odometry, Path, OccupancyGrid
@@ -29,18 +28,14 @@ class PathMPC(Node):
         tb1_path:str = self.get_parameter('tb1_path').get_parameter_value().string_value
         tb2_path:str = self.get_parameter('tb2_path').get_parameter_value().string_value
 
-        plank_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
-                                               reliability=ReliabilityPolicy.RELIABLE)
-
         self.cmd_vel_publisher1 = self.create_publisher(TwistStamped, tb1_cmd_vel, 10)
         self.cmd_vel_publisher2 = self.create_publisher(TwistStamped, tb2_cmd_vel, 10)
-
 
         self.timer = self.create_timer(0.1, self.timer_callback)
 
         self.create_subscription(Odometry, tb1_odom, self.odom_callback1, 10)
         self.create_subscription(Odometry, tb2_odom, self.odom_callback2, 10)
-        self.create_subscription(Bool, rivstart, self.turn_off_callback, plank_qos)
+        self.create_subscription(Bool, rivstart, self.turn_off_callback, 10)
         self.create_subscription(Path, tb1_path, self.path_callback1, 10)
         self.create_subscription(Path, tb2_path, self.path_callback2, 10)
         self.create_subscription(OccupancyGrid, 'map', self.map_callback, 10)
