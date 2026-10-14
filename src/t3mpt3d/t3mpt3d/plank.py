@@ -108,18 +108,20 @@ class PlankMPC(Node):
         self.start = start_msg.data
 
     def _on_path(self,path_msg):
+        if not self.start:
+            return
         if self.received_path:
             return
         poses = path_msg.poses
         for pose in poses:
-            x = pose.position.x
-            y = pose.position.y
-            q = pose.orientation
+            x = pose.pose.position.x
+            y = pose.pose.position.y
+            q = pose.pose.orientation
             yaw = np.arctan2(
                 2.0 * (q.w * q.z + q.x * q.y),
                 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
             )
-            self.poses.append([x,y,yaw])
+            self.path.append([x,y,yaw])
         self.received_path = True
 
     def _on_plank(self,plank_msg):

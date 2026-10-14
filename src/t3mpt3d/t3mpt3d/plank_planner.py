@@ -188,7 +188,7 @@ class PathPlannerNode(Node):
         self.leaves = []
 
         # RRT
-        num_nodes = 1000
+        num_nodes = 5000
         for it in range(num_nodes):
 
             r_x = np.random.uniform(origin_x, origin_x+map_width)
