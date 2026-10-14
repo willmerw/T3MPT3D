@@ -68,7 +68,10 @@ def generate_launch_description():
         executable='mission_control_node',      # Replace with your executable name
         name='mission_control',
         output='screen',
-        parameters=[{'use_sim_time': True}] # Good practice if relying on Gazebo time
+        parameters=[{'use_sim_time': True,
+                        "plank_pos1": [2.5, -0.5],
+                        "plank_pos2": [2.5,0.5],
+                     }] # Good practice if relying on Gazebo time
     )
 
     map_merge_node = Node(

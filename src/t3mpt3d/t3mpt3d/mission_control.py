@@ -12,7 +12,7 @@ import math as math
 class MissionControlNode(Node):
     def __init__(self):
         super().__init__("mission_control")
-        self.robots = ["tb3_1","tb3_2"]
+
         # 1. Declare parameters (base suffixes for topics)
         # Note: I removed the duplicate parameter declarations you had.
         # Also added "reached_topic" which was missing from the declare block.
@@ -27,6 +27,10 @@ class MissionControlNode(Node):
         self.declare_parameter("move_to_plank","/move_to_plank")
         self.declare_parameter("auto_start", True)
 
+        self.declare_parameter("plank_pos1", [2.5,-0.3])
+        self.plank_pos2 =[2.5,0.2]
+        self.declare_parameter("plank_pos2",[2.5,0.2])
+
         # 2. Get parameter values (these act as our base topic suffixes)
         exploration_trigger_suffix = self.get_parameter("exploration_trigger").value
         plank_pos_topic = self.get_parameter("plank_pos").value
@@ -38,6 +42,9 @@ class MissionControlNode(Node):
         low_fronteir_topic = self.get_parameter("low_fronteirs").value
         move_to_plank_topic = self.get_parameter("move_to_plank").value
         self.auto_start =self.get_parameter("auto_start").value
+        self.plank_pos1 = self.get_parameter("plank_pos1").value
+        self.plank_pos2 = self.get_parameter("plank_pos2").value
+
         # 3. Create dictionaries to hold publishers and subscribers per robot
         plank_qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
                                        reliability=ReliabilityPolicy.RELIABLE)
@@ -49,13 +56,12 @@ class MissionControlNode(Node):
         self.plank_pos_subscriptions = {}
         self.plank_reached_subscriptions = {}
         self.reached_subscriptions = {}
-        self.plank_pos1 = [2.5,-0.3]
-        self.plank_pos2 =[2.5,0.2]
         self.goal = [0,0,0]
         self.found_plank = False
         self.reached =[]
         self.started = False
         #publishers
+        self.robots = ["tb3_1","tb3_2"]
         self.riv_start_publishers= self.create_publisher(
                                             Bool, riv_start_topic, 10
                                         )
@@ -82,31 +88,8 @@ class MissionControlNode(Node):
         for robot in self.robots:
             # Construct the namespaced topics (e.g., "/tb3_1/plank_reached")
 
-            explore_topic = f"/{robot}{exploration_trigger_suffix}"
-
-
-            plank_reached_topic = f"/{robot}{plank_reached_suffix}"
             reached_topic = f"/{robot}{reached_suffix}"
 
-            # --- Publishers ---
-            self.goal_pose_publishers[robot] = self.create_publisher(
-                PoseStamped, goal_topic, plank_qos
-            )
-
-
-            self.exploration_trigger_publishers[robot] = self.create_publisher(
-                Bool, explore_topic, plank_qos
-            )
-
-            # --- Subscribers ---
-            # We use partial() to pass the 'robot' variable into the callback
-            # so the callback knows which robot sent the message.
-
-
-            # self.plank_reached_subscriptions[robot] = self.create_subscription(
-            #     Bool, plank_reached_topic,
-            #     partial(self.plank_reached_callback, robot_name=robot), plank_qos
-            # )
             self.reached_subscriptions[robot] = self.create_subscription(
                 Bool, reached_topic,
                 partial(self.reached_callback, robot_name=robot), plank_qos
