@@ -105,7 +105,7 @@ def generate_launch_description():
         #      name='path_follower_node',
         #      parameters=[{'use_sim_time': use_sim_time,
         #                   'base_frame': [namespace, '/base_footprint']}],
-        # ),
+        #  ),
         # Node(
         #     package='rviz2',
         #     executable='rviz2',

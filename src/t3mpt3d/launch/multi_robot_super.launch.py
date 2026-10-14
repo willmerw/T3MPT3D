@@ -38,7 +38,7 @@ def generate_launch_description():
             'min_frontiers_cells': '20',
             'plank_index': '0',
             'segment_size': '0.02',
-            'plank_rad': '0.05',
+            'plank_rad': '0.1',
         }.items()
     )
 
@@ -54,7 +54,7 @@ def generate_launch_description():
             'min_frontiers_cells': '20',
             'plank_index': '1',
             'segment_size': '0.02',
-            'plank_rad': '0.05',
+            'plank_rad': '0.1',
 
         }.items()
     )

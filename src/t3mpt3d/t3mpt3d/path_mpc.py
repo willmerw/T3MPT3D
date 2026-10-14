@@ -16,7 +16,7 @@ class PathMPC(Node):
         self.declare_parameter('tb2_cmd_vel', '/turtlebot2/cmd_vel')
         self.declare_parameter('tb1_odom', '/turtlebot1/odom_world')
         self.declare_parameter('tb2_odom', '/turtlebot2/odom_world')
-        self.declare_parameter('rivstart', '/rivstart')      
+        self.declare_parameter('rivstart', '/rivstart')
         self.declare_parameter('tb1_path', '/turtlebot1/path')
         self.declare_parameter('tb2_path', '/turtlebot2/path')
 
@@ -139,9 +139,9 @@ class PathMPC(Node):
 
         # Input Constraints
         mpc.bounds['lower','_u','vx'] = 0.0
-        mpc.bounds['upper','_u','vx'] =  0.1
-        mpc.bounds['lower','_u','vt'] = -0.25
-        mpc.bounds['upper','_u','vt'] =  0.25
+        mpc.bounds['upper','_u','vx'] =  0.2 # 0.2
+        mpc.bounds['lower','_u','vt'] = -0.5 # -0.5
+        mpc.bounds['upper','_u','vt'] =  0.5 # 0.5
 
 
         safe_distance = 0.3

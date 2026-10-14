@@ -182,7 +182,7 @@ class PathPlannerNode(Node):
         self.declare_parameter('stop_on_found', False)
         self.declare_parameter('min_frontiers_cells', 30)
         self.declare_parameter('plank_index', 0)
-        self.declare_parameter('plank_rad', 0.01)
+        self.declare_parameter('plank_rad', 0.1)
 
         map_topic: str = self.get_parameter('map_topic').get_parameter_value().string_value
         frontier_topic: str = self.get_parameter('frontier_topic').get_parameter_value().string_value
@@ -749,7 +749,8 @@ class PathPlannerNode(Node):
             waypoint.reverse() # reverse list to get from root to goal
         self.get_logger().info(f"{len(waypoint)}, first:{waypoint[0]}, last:{waypoint[-1]}")
 
-
+        if fixed_target is not None and waypoint[-1] != (self.target[0], self.target[1]):
+            waypoint.append((self.target[0], self.target[1]))
         shorter_waypoints = [waypoint[0]] # init list with root node
         i = 0
         while i < len(waypoint) - 1:
