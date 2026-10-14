@@ -81,7 +81,9 @@ def generate_launch_description():
         output='screen',
         parameters=[{'use_sim_time': True,
                      'tb1_map_topic':f'{TB1_NAME}/map',
-                     'tb2_map_topic':f'{TB2_NAME}/map'}] # Good practice if relying on Gazebo time
+                     'tb2_map_topic':f'{TB2_NAME}/map',
+                     'tb1_odom_world':f'{TB1_NAME}/odom_world',
+                     'tb2_odom_world':f'{TB1_NAME}/odom_world'}]
     )
 
     frontier_detector = Node(
