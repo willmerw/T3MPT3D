@@ -113,6 +113,15 @@ def generate_launch_description():
             }
         ],
     )
+    plank_planner_node = Node(
+            package='t3mpt3d',
+            executable='plank_planner',
+            name='plank_planner_node',
+            output='screen',
+            parameters=[
+                {'use_sim_time': True,}
+            ],
+        )
     # Bridge for tb3_1 (Spawned at x=-2.0, y=-0.5)
     tf_world_to_tb3_1 = Node(
         package='tf2_ros',
