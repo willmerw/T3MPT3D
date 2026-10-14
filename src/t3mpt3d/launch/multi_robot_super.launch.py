@@ -134,7 +134,12 @@ def generate_launch_description():
              executable='path_mpc',
              name='path_mpc',
              output='screen',
-             parameters=[{'use_sim_time': True}] # Good practice if relying on Gazebo time
+             parameters=[{'use_sim_time': True,
+                        'tb1_cmd_vel': f'{TB1_NAME}/cmd_vel',
+                        'tb2_cmd_vel': f'{TB2_NAME}/cmd_vel',
+                        'tb1_odom': f'{TB1_NAME}/odom_world',
+                        'tb2_odom': f'{TB2_NAME}/odom_world',
+                          }] # Good practice if relying on Gazebo time
     )
 
     # 3. ADD THE NODE TO THE RETURN LIST
@@ -149,5 +154,5 @@ def generate_launch_description():
         frontier_detector,
         odom_to_world,
         path_follow
-        #pnk_node   # <--- Added here
+        #plank_controller_node   # <--- Added here
     ])
