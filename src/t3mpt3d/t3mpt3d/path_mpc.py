@@ -70,8 +70,8 @@ class PathMPC(Node):
 
         self.mpc1 = self.defineTBotMPC(self.model1, ts, N)
         self.mpc2 = self.defineTBotMPC(self.model2, ts, N)
-        self.mpc1.settings.supress_ipopt_output = True
-        self.mpc2.settings.supress_ipopt_output = True
+        self.mpc1.settings.supress_ipopt_output()
+        self.mpc2.settings.supress_ipopt_output()
         self.mpc1.setup()
         self.mpc2.setup()
         self.mpc1.set_initial_guess()
@@ -278,6 +278,7 @@ class PathMPC(Node):
             new_cmd.twist.linear.x = 0.0
             new_cmd.twist.angular.z = 0.0
             self.cmd_vel_publisher1.publish(new_cmd)
+            self.cmd_vel_publisher2.publish(new_cmd)
             return
         tb3_1_stop = False
         tb3_2_stop = False
