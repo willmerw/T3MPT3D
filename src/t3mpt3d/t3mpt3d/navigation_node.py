@@ -655,7 +655,7 @@ class PathPlannerNode(Node):
 
         if segment_free(start=start[:2], end=self.target, spacing=spacing, occ=occ, unk=unk, ox=x_min, oy=y_min, res=mapResolution, dr=dr, dc=dc):
 
-            waypoint = [(start[0], start[1]),(self.target[0], self.target[1])]
+            waypoint = [(self.target[0], self.target[1])]
             self.get_logger().info(f"Straight path, skip RRT")
 
         else:
@@ -747,31 +747,31 @@ class PathPlannerNode(Node):
                 node = node.parent
 
             waypoint.reverse() # reverse list to get from root to goal
-        self.get_logger().info(f"{len(waypoint)}, first:{waypoint[0]}, last:{waypoint[-1]}")
+            self.get_logger().info(f"{len(waypoint)}, first:{waypoint[0]}, last:{waypoint[-1]}")
 
-        if fixed_target is not None and waypoint[-1] != (self.target[0], self.target[1]):
-            waypoint.append((self.target[0], self.target[1]))
-        shorter_waypoints = [waypoint[0]] # init list with root node
-        i = 0
-        while i < len(waypoint) - 1:
-            j = len(waypoint) - 1
-            while j > i + 1 and not segment_free(start=waypoint[i], end=waypoint[j],
-                                                 spacing=spacing, occ=occ, unk=unk,
-                                                 ox=x_min, oy=y_min,
-                                                 res=mapResolution, dr=dr, dc=dc):
-                j = j - 1
-            shorter_waypoints.append(waypoint[j])
-            i = j
+            if fixed_target is not None and waypoint[-1] != (self.target[0], self.target[1]):
+                waypoint.append((self.target[0], self.target[1]))
+            shorter_waypoints = [waypoint[0]] # init list with root node
+            i = 0
+            while i < len(waypoint) - 1:
+                j = len(waypoint) - 1
+                while j > i + 1 and not segment_free(start=waypoint[i], end=waypoint[j],
+                                                    spacing=spacing, occ=occ, unk=unk,
+                                                    ox=x_min, oy=y_min,
+                                                    res=mapResolution, dr=dr, dc=dc):
+                    j = j - 1
+                shorter_waypoints.append(waypoint[j])
+                i = j
 
-        waypoint = shorter_waypoints
+            waypoint = shorter_waypoints
 
-        segment_path = [waypoint[0]]
-        for i in range(len(waypoint)-1):
-            segment_length = self.distance(waypoint[i+1],waypoint[i][0],waypoint[i][1])
-            n = max(int(np.ceil(segment_length/self.segment_size)),3)
-            segment = list(np.linspace(waypoint[i],waypoint[i+1],n))
-            segment_path.extend(segment[1:])
-        waypoint = segment_path
+            segment_path = [waypoint[0]]
+            for i in range(len(waypoint)-1):
+                segment_length = self.distance(waypoint[i+1],waypoint[i][0],waypoint[i][1])
+                n = max(int(np.ceil(segment_length/self.segment_size)),3)
+                segment = list(np.linspace(waypoint[i],waypoint[i+1],n))
+                segment_path.extend(segment[1:])
+            waypoint = segment_path
 
 
         new_msg = Path()
@@ -788,7 +788,7 @@ class PathPlannerNode(Node):
             if i < len(waypoint) - 1:
                 yaw = np.arctan2((waypoint[i + 1][1] - waypoint[i][1]), (waypoint[i + 1][0] - waypoint[i][0]))
 
-            plannedPath.pose.orientation = yaw_to_quaternion(yaw)
+            #plannedPath.pose.orientation = yaw_to_quaternion(yaw)
 
             new_msg.poses.append(plannedPath)
 

@@ -33,10 +33,10 @@ class PlankMPC(Node):
         self.declare_parameter('tb2_odom_world', '/turtlebot2/odom_world')
 
         tb1_cmd_vel: str = self.get_parameter('tb1_cmd_vel').get_parameter_value().string_value
-        tb2_cmd_vel: str = self.get_parameter('tb1_cmd_vel').get_parameter_value().string_value
+        tb2_cmd_vel: str = self.get_parameter('tb2_cmd_vel').get_parameter_value().string_value
 
         tb1_odom_world: str = self.get_parameter('tb1_odom_world').get_parameter_value().string_value
-        tb2_odom_world: str = self.get_parameter('tb1_odom_world').get_parameter_value().string_value
+        tb2_odom_world: str = self.get_parameter('tb2_odom_world').get_parameter_value().string_value
 
         self.r1_pub = self.create_publisher(TwistStamped, tb1_cmd_vel, 10)
         self.r2_pub = self.create_publisher(TwistStamped, tb2_cmd_vel, 10)
@@ -82,14 +82,12 @@ class PlankMPC(Node):
         self.r = 0.0
         self.traj = []
 
-        self.model = definePlankModel()
+        self.model = definePlankModel(self.r)
         self.model.setup()
-
-        self.received_path = False
         self.path = [] #x,y,yaw
         self.path_i=0
         ts = 0.1
-        N = 20 # horizon
+        N = 40 # horizon
 
         self.mpc = definePlankMPC(self.model, ts, N)
 
@@ -108,9 +106,7 @@ class PlankMPC(Node):
         self.start = start_msg.data
 
     def _on_path(self,path_msg):
-        if not self.start:
-            return
-        if self.received_path:
+        if self.path_received:
             return
         poses = path_msg.poses
         for pose in poses:
@@ -122,7 +118,7 @@ class PlankMPC(Node):
                 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
             )
             self.path.append([x,y,yaw])
-        self.received_path = True
+        self.path_received = True
 
     def _on_plank(self,plank_msg):
         if not self.plank_received:
@@ -188,9 +184,11 @@ class PlankMPC(Node):
 
 
         self.x_desired, self.y_desired, self.yaw_desired = self.path[self.path_i]
+
+        self.get_logger().info(f"PLANK: {self.plank} DESIRED: {self.path[self.path_i]}")
         d = np.linalg.norm(np.array([self.x_desired, self.y_desired]) - p0[:2])
 
-        if d < 0.1:
+        if d < 0.05:
             self.path_i += 1
             if self.path_i >= len(self.path):
                 stop_cmd = TwistStamped()
@@ -242,10 +240,14 @@ class PlankMPC(Node):
         r1_cmd = TwistStamped()
         r2_cmd = TwistStamped()
 
-        v1 = u[0][0]
-        v2 = u[1][0]
-        vth1 = u[2][0]
-        vth2 = u[3][0]
+        # v1 = u[0][0]
+        # v2 = u[1][0]
+        # vth1 = u[2][0]
+        # vth2 = u[3][0]
+        v1   = float(u[0])
+        v2   = float(u[1])
+        vth1 = float(u[2])
+        vth2 = float(u[3])
         r1_cmd.twist.linear.x = v1
         r1_cmd.twist.angular.z = vth1
 
@@ -341,23 +343,8 @@ class PlankMPC(Node):
 
         self.marker_pub.publish(marker)
 
-def draw_eight(self, x, y, diameter):
-    pts = []
-    fid = 10
-    for i in range(-180,180,fid):
-        rad = math.radians(i)
-        x_pos = (x + diameter) + diameter*math.cos(rad)
-        y_pos = y + diameter*math.sin(rad)
-        pts.append((x_pos,y_pos))
-    for i in range(360,0,-fid):
-        rad = math.radians(i)
-        x_pos = (x - diameter) + diameter*math.cos(rad)
-        y_pos = y + diameter*math.sin(rad)
-        pts.append((x_pos,y_pos))
-    return pts
 
-
-def definePlankModel():
+def definePlankModel(r):
 
   model_type = 'continuous'
   model = do_mpc.model.Model(model_type)
@@ -398,6 +385,11 @@ def definePlankMPC(model, ts, N):
       'store_full_solution': True
   }
   mpc.set_param(**setup_mpc)
+  mpc.settings.nlpsol_opts = {
+          'ipopt.print_level': 0,   # no iteration table
+          'ipopt.sb': 'yes',        # no IPOPT banner
+          'print_time': 0,          # no CasADi timing summary
+          }
 
   mterm = (model.x['x'] - model.tvp['x_goal'])**2 + (model.x['y'] - model.tvp['y_goal'])**2
   lterm = (model.x['x'] - model.tvp['x_goal'])**2 + (model.x['y'] - model.tvp['y_goal'])**2 + (model.x['thp'] - model.tvp['yaw_goal'])**2

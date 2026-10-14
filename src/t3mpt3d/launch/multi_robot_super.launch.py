@@ -128,7 +128,9 @@ def generate_launch_description():
             name='plank_planner_node',
             output='screen',
             parameters=[
-                {'use_sim_time': True,}
+                {'use_sim_time': True,
+                 'tb1_odom_world': f'{TB1_NAME}/odom_world',
+                 'tb2_odom_world': f'{TB2_NAME}/odom_world',}
             ],
         )
     # Bridge for tb3_1 (Spawned at x=-2.0, y=-0.5)

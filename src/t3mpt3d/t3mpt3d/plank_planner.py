@@ -2,14 +2,14 @@
 
 import math
 from typing import Optional, Tuple, List
-
+import message_filters
 import rclpy
 from rclpy.node import Node
 from rclpy.duration import Duration
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
-
+from scipy.ndimage import distance_transform_edt
 from geometry_msgs.msg import PoseStamped, Quaternion,Point,PolygonStamped
-from nav_msgs.msg import Path, OccupancyGrid
+from nav_msgs.msg import Path, OccupancyGrid, Odometry
 from std_msgs.msg import Bool
 from builtin_interfaces.msg import Time as TimeMsg
 from rclpy.time import Time
@@ -34,6 +34,8 @@ def yaw_to_quaternion(yaw: float) -> Quaternion:
     q.z = math.sin(yaw / 2.0)
     q.w = math.cos(yaw / 2.0)
     return q
+
+
 
 class TreeNode:
     def __init__(self, pt, parent):
@@ -75,6 +77,7 @@ class PathPlannerNode(Node):
         plank_qos = QoSProfile(depth=1, durability=DurabilityPolicy.VOLATILE,
                                        reliability=ReliabilityPolicy.RELIABLE)
 
+        self.received_start = False
         self.start = [0.0,0.0,0.0] #x,y, thp
         self.r = 0.0 # Plank radius
         self.goal = [0.0,0.0] #x,y
@@ -84,7 +87,7 @@ class PathPlannerNode(Node):
         self.obs_fid = 0.01 #obstacle fidelity
         self.plank_twist = np.pi/10
         self.goal_radius = 0.2
-        self.map_inflation = 3
+        self.map_inflation = 1
 
         x = self.start[0]
         y = self.start[1]
@@ -113,10 +116,52 @@ class PathPlannerNode(Node):
         self.goal_received = False
         self.goal_sub = self.create_subscription(PoseStamped, '/goal', self._on_goal, default_qos)
 
+        self.declare_parameter('tb1_odom_world', '/turtlebot1/odom_world')
+        self.declare_parameter('tb2_odom_world', '/turtlebot2/odom_world')
+
+        tb1_odom_world: str = self.get_parameter('tb1_odom_world').get_parameter_value().string_value
+        tb2_odom_world: str = self.get_parameter('tb2_odom_world').get_parameter_value().string_value
+
+        self.odom1_sub = message_filters.Subscriber(
+            self, Odometry, tb1_odom_world,10
+        )
+        self.odom2_sub = message_filters.Subscriber(
+            self, Odometry, tb2_odom_world,10
+        )
+        self.sync = message_filters.ApproximateTimeSynchronizer(
+            [self.odom1_sub, self.odom2_sub], queue_size=10, slop=0.05
+        )
+        self.sync.registerCallback(self.odom_callback)
+
         # State
         self._latest_map: Optional[OccupancyGrid] = None
 
-        self.get_logger().info('PathPlannerNode initialized==="=="=#=#=="#="#=#="="#=#"="#.')
+    def odom_callback(self,odom1_msg,odom2_msg):
+
+        if not self.rivstart:
+            return
+
+        if self.received_start:
+            return
+
+        p1x = odom1_msg.pose.pose.position.x
+        p1y = odom1_msg.pose.pose.position.y
+
+        p2x = odom2_msg.pose.pose.position.x
+        p2y = odom2_msg.pose.pose.position.y
+
+        pt1 = np.array([p1x,p1y])
+        pt2 = np.array([p2x,p2y])
+        d = pt2-pt1
+        self.r = np.linalg.norm(d)/2
+        thp = np.arctan2(d[1],d[0])
+        pt = pt1 + d/2
+        x = pt[0]
+        y = pt[1]
+        self.start = [x,y,thp]
+        self.get_logger().info(f"START: {self.start}")
+        self.received_start = True
+
 
     def _on_start(self,start_msg):
         self.rivstart = start_msg.data
@@ -129,30 +174,26 @@ class PathPlannerNode(Node):
             return
         if not self.goal_received:
             return
+        if not self.received_start:
+            return
         if not self.map_received:
-            self.map_received = True
-            self.map = map_msg
-            self.publish_goal(self.goal)
-            self.plan_path(map_msg)
-            self.get_logger().info("PLANNING TO WALK THE PLANK")
+            fail = True
+            while fail:
+                self.map_received = True
+                self.map = map_msg
+                self.publish_goal(self.goal)
+                fail = self.plan_path(map_msg)
+                if fail == True:
+                    continue
+                else:
+                    fail = False
+
+
 
     def _on_plank(self,plank_msg):
         print(plank_msg)
         if not self.plank_received:
             self.plank_received = True
-            pt1x = plank_msg.polygon.points[0].x
-            pt2x = plank_msg.polygon.points[1].x
-            pt1y = plank_msg.polygon.points[0].y
-            pt2y = plank_msg.polygon.points[1].y
-            pt1 = np.array([pt1x,pt1y])
-            pt2 = np.array([pt2x,pt2y])
-            d = pt2-pt1
-            self.r = np.linalg.norm(d)/2
-            thp = np.arctan2(d[1],d[0])
-            pt = pt1 + d/2
-            x = pt[0]
-            y = pt[1]
-            self.start = [x,y,thp]
             self.get_logger().info("THE SHIP IS READY")
 
 
@@ -169,11 +210,14 @@ class PathPlannerNode(Node):
 
         self.get_logger().info("READ THE MAP YE DOGS!")
 
-        map_msg = self.inflate_map(map_msg)
-        self.inf_map_pub.publish(map_msg)
+        inf_map_msg = self.inflate_map(map_msg)
+        self.inf_map_pub.publish(inf_map_msg)
         print(map_msg.header.frame_id)
 
         x,y,thp = self.start
+
+        self.get_logger().info(f"THE GOAL IS {self.goal}")
+        self.get_logger().info(f"THE START IS {self.start}")
 
         map_res = map_msg.info.resolution
         map_height = map_msg.info.height * map_res
@@ -188,88 +232,109 @@ class PathPlannerNode(Node):
         self.leaves = []
 
         # RRT
-        num_nodes = 5000
-        for it in range(num_nodes):
-
-            r_x = np.random.uniform(origin_x, origin_x+map_width)
-            r_y = np.random.uniform(origin_y, origin_y+map_height)
-            random_pt = np.array([r_x, r_y], dtype=float)
-
-            _, closest_node = self.tree.get_closest_node(random_pt)
-            d = np.array(random_pt - closest_node.pt)
-            d_norm = np.linalg.norm(d)
-            border_pt = closest_node.pt + (d/d_norm)*self.node_max_dist
-            obs = self.check_obs(closest_node.pt,border_pt,map_msg)
-            if obs:
-                continue
-
-            if d_norm < self.node_max_dist:
-                new_node = TreeNode(pt=random_pt,parent=closest_node)
-
-            else:
-                new_pt = border_pt
-                new_node = TreeNode(pt=new_pt,parent=closest_node)
-
-            self.tree_pts.append((closest_node.pt,new_node.pt))
-
-            closest_node.children.append(new_node)
-
-            if closest_node in self.leaves:
-                self.leaves.remove(closest_node)
-
-            if np.linalg.norm(np.array(self.goal)-np.array(new_node.pt)) < self.goal_radius:
-                self.leaves.append(new_node)
-
-        self.publish_tree(self.tree_pts)
-
         valid_pose_paths = []
         valid_paths = []
-        r = self.r
+        while len(valid_paths) == 0:
+            num_nodes = 5000
+            for it in range(num_nodes):
 
-        for leaf in self.leaves:
-            path = leaf.get_path_to_root()
-            poses = []
-            for pt in path:
-                poses.append([pt[0],pt[1],thp])
+                r_x = np.random.uniform(origin_x, origin_x+map_width)
+                r_y = np.random.uniform(origin_y, origin_y+map_height)
+                random_pt = np.array([r_x, r_y], dtype=float)
 
-            valid_path = True
-            i = 0
-            nthp =thp
-            for pt in path:
+                _, closest_node = self.tree.get_closest_node(random_pt)
+                d = np.array(random_pt - closest_node.pt)
+                d_norm = np.linalg.norm(d)
+                border_pt = closest_node.pt + (d/d_norm)*self.node_max_dist
+                obs = self.check_obs(closest_node.pt,border_pt,map_msg)
+                if obs:
+                    continue
 
-                v_yaw, nthp = self.valid_yaw_exists(pt,nthp,r)
+                if d_norm < self.node_max_dist:
+                    new_node = TreeNode(pt=random_pt,parent=closest_node)
 
-                if v_yaw:
-                    poses = np.array(poses)
-                    poses[i:,2] = nthp
                 else:
-                    valid_path = False
-                    break
-                i+=1
+                    new_pt = border_pt
+                    new_node = TreeNode(pt=new_pt,parent=closest_node)
 
-            if valid_path:
-                valid_pose_paths.append(poses)
-                valid_paths.append(path)
+                self.tree_pts.append((closest_node.pt,new_node.pt))
+
+                closest_node.children.append(new_node)
+
+                if closest_node in self.leaves:
+                    self.leaves.remove(closest_node)
+
+                if np.linalg.norm(np.array(self.goal)-np.array(new_node.pt)) < self.goal_radius:
+                    self.leaves.append(new_node)
+
+            self.publish_tree(self.tree_pts)
+
+
+            r = self.r
+
+            for leaf in self.leaves:
+                path = leaf.get_path_to_root()
+                poses = []
+                for pt in path:
+                    poses.append([pt[0],pt[1],thp])
+
+                valid_path = True
+                i = 0
+                nthp =thp
+                for pt in path:
+
+                    v_yaw, nthp = self.valid_yaw_exists(pt,nthp,r)
+
+                    if v_yaw:
+                        poses = np.array(poses)
+                        poses[i:,2] = nthp
+                    else:
+                        valid_path = False
+                        break
+                    i+=1
+
+                if valid_path:
+                    valid_pose_paths.append(poses)
+                    valid_paths.append(path)
+                if len(valid_paths) < 1:
+                    self.get_logger().info("YER HOLDIN THE MAP UPSIDE DOWN YE SCURVY DOG!")
+
+                self.get_logger().info(f"NODES IN TREE: {len(self.tree_pts)}")
         print(f"DONE, Found {len(valid_paths)} valid paths")
 
-        if len(valid_paths) < 1:
-            self.get_logger().info("ABORT! NO VALID MAP FOUND!")
-            return
 
-        best_path, best_pose_path = self.evaluate_valid_paths(valid_paths,valid_pose_paths)
-        path = best_path
+
+        best_path, best_pose_path = self.evaluate_valid_paths(valid_paths, valid_pose_paths)
+
+        # Maximize hallway clearance
+        best_path = self.maximize_clearance(best_path, map_msg)
+
+        # Reconstruct pose path with updated positions and retained yaws
+        updated_pose_path = []
+        for i, pt in enumerate(best_path):
+            yaw = best_pose_path[i][2]
+            updated_pose_path.append([pt[0], pt[1], yaw])
+
+        best_pose_path = updated_pose_path
         self.pose_path = best_pose_path
-        print(self.pose_path)
+        path = best_path
         self.publish_plank_path()
         path_msg = Path()
         path_msg.header.frame_id = 'world'
         path_pt_ls = []
-        for pt in path:
+        path_msg = Path()
+        path_msg.header.frame_id = 'world'
+        path_pt_ls = []
+        for pt in best_pose_path:
             path_pt = PoseStamped()
             path_pt.header.frame_id = 'world'
             path_pt.pose.position.x = pt[0]
             path_pt.pose.position.y = pt[1]
-            path_pt.pose.orientation.w = 1.0
+
+            yaw = pt[2]
+            path_pt.pose.orientation.z = math.sin(yaw / 2.0)
+            path_pt.pose.orientation.w = math.cos(yaw / 2.0)
+
             path_pt_ls.append(path_pt)
         path_msg.poses = path_pt_ls
         self.path_pub.publish(path_msg)
@@ -510,6 +575,62 @@ class PathPlannerNode(Node):
 
         map_msg.data = map_grid.ravel().tolist()
         return map_msg
+
+    def maximize_clearance(self, path: List[np.ndarray], map_msg: OccupancyGrid, max_iterations: int = 15, step_size: float = 0.05) -> List[np.ndarray]:
+        """Optimizes path waypoints to maximize clearance from obstacles using EDT gradient ascent."""
+        map_grid = np.array(map_msg.data, dtype=np.int16).reshape(
+            (map_msg.info.height, map_msg.info.width)
+        )
+
+        # Create obstacle mask (obstacles >= 50 or unknown == -1)
+        obstacle_mask = (map_grid >= 50) | (map_grid == -1)
+
+        # Compute distance transform in pixels
+        dist_map_px = distance_transform_edt(~obstacle_mask)
+
+        # Scale distance map to meters using map resolution
+        map_res = map_msg.info.resolution
+        dist_map = dist_map_px * map_res
+
+        origin_x = map_msg.info.origin.position.x
+        origin_y = map_msg.info.origin.position.y
+
+        optimized_path = [np.array(pt, dtype=float) for pt in path]
+
+        for _ in range(max_iterations):
+            new_path = []
+            for i, pt in enumerate(optimized_path):
+                # Fix start and goal points
+                if i == 0 or i == len(optimized_path) - 1:
+                    new_path.append(pt)
+                    continue
+
+                gx = (pt[0] - origin_x) / map_res
+                gy = (pt[1] - origin_y) / map_res
+                ix, iy = int(round(gx)), int(round(gy))
+
+                if not (1 <= ix < map_msg.info.width - 1 and 1 <= iy < map_msg.info.height - 1):
+                    new_path.append(pt)
+                    continue
+
+                # Calculate numerical gradient of distance map (row=y, col=x)
+                dx = dist_map[iy, ix+1] - dist_map[iy, ix-1]
+                dy = dist_map[iy+1, ix] - dist_map[iy-1, ix]
+                grad = np.array([dx, dy])
+                grad_norm = np.linalg.norm(grad)
+
+                if grad_norm > 1e-5:
+                    candidate_pt = pt + step_size * (grad / grad_norm)
+                    # Verify the adjustment does not collide with obstacles
+                    if not self.check_obs(optimized_path[i-1], candidate_pt, map_msg) and \
+                       not self.check_obs(candidate_pt, optimized_path[i+1], map_msg):
+                        new_path.append(candidate_pt)
+                        continue
+
+                new_path.append(pt)
+            optimized_path = new_path
+
+        return optimized_path
 
 
 def main() -> None:
