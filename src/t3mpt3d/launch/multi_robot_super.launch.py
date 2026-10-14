@@ -34,10 +34,11 @@ def generate_launch_description():
             'use_sim_time': 'true',   # <--- ADD THIS
             'other_target_topic': f'/{TB2_NAME}/my_target_topic',
             'yields': 'false',
-            'stop_on_found': 'false',
+            'stop_on_found': 'true',
             'min_frontiers_cells': '20',
             'plank_index': '0',
             'segment_size': '0.02',
+            'plank_rad': '0.05',
         }.items()
     )
 
@@ -49,10 +50,11 @@ def generate_launch_description():
             'use_sim_time': 'true',   # <--- ADD THIS
             'other_target_topic': f'/{TB1_NAME}/my_target_topic',
             'yields': 'true',
-            'stop_on_found': 'false',
+            'stop_on_found': 'true',
             'min_frontiers_cells': '20',
             'plank_index': '1',
             'segment_size': '0.02',
+            'plank_rad': '0.05',
 
         }.items()
     )

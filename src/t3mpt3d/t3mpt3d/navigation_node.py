@@ -182,6 +182,7 @@ class PathPlannerNode(Node):
         self.declare_parameter('stop_on_found', False)
         self.declare_parameter('min_frontiers_cells', 30)
         self.declare_parameter('plank_index', 0)
+        self.declare_parameter('plank_rad', 0.01)
 
         map_topic: str = self.get_parameter('map_topic').get_parameter_value().string_value
         frontier_topic: str = self.get_parameter('frontier_topic').get_parameter_value().string_value
@@ -219,6 +220,7 @@ class PathPlannerNode(Node):
         self.stop_on_found: bool = self.get_parameter('stop_on_found').get_parameter_value().bool_value
         self.min_frontiers_cells: int = self.get_parameter('min_frontiers_cells').get_parameter_value().integer_value
         self.plank_index: int = self.get_parameter('plank_index').get_parameter_value().integer_value
+        self.plank_rad: float = self.get_parameter('plank_rad').get_parameter_value().double_value
 
         self.base_frame: str = self.get_parameter('base_frame').get_parameter_value().string_value
         self.tf_timeout = Duration(seconds=self.get_parameter('tf_timeout_sec').get_parameter_value().double_value)
@@ -420,7 +422,7 @@ class PathPlannerNode(Node):
         x, y, yaw = pose
         d = self.distance(end, x, y)
         if self.goal is not None:
-            if d < self.goal_radius:
+            if d < self.plank_rad:
                 self.goal = None
                 self.no_path(msg)
                 self.set_state(REACHED)
