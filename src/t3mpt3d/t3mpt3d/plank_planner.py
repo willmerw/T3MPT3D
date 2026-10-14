@@ -152,13 +152,17 @@ class PathPlannerNode(Node):
         if not self.start:
             return
 
+        self.get_logger().info("RAISING SAILS")
+
         if not self.plank_received:
             return
+
+        self.get_logger().info("THE SHIP IS READY")
 
         if not self.received_goal:
             return
 
-        print("PLANNING PATH")
+        self.get_logger().info("READ THE MAP YE DOGS!")
 
         map_msg = self.inflate_map(map_msg)
         self.inf_map_pub.publish(map_msg)
@@ -244,6 +248,7 @@ class PathPlannerNode(Node):
         print(f"DONE, Found {len(valid_paths)} valid paths")
 
         if len(valid_paths) < 1:
+            self.get_logger().info("ABORT! NO VALID MAP FOUND!")
             return
 
         best_path, best_pose_path = self.evaluate_valid_paths(valid_paths,valid_pose_paths)
@@ -263,6 +268,7 @@ class PathPlannerNode(Node):
             path_pt_ls.append(path_pt)
         path_msg.poses = path_pt_ls
         self.path_pub.publish(path_msg)
+        self.get_logger().info("I CAN SMELL THE RUM OOOZIN")
 
         return path
 
