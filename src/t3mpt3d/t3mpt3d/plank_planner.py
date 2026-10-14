@@ -89,8 +89,6 @@ class PathPlannerNode(Node):
         self.tree = TreeNode([x,y], None)
         self.tree_pts = []
 
-        self.goal_reached = True
-
         self.path_pub = self.create_publisher(Path, '/path', transient_qos)
 
         self.tree_pub = self.create_publisher(Marker, 'rrt_tree', 10)
