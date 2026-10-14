@@ -16,13 +16,17 @@ class PathMPC(Node):
         self.declare_parameter('tb2_cmd_vel', '/turtlebot2/cmd_vel')
         self.declare_parameter('tb1_odom', '/turtlebot1/odom_world')
         self.declare_parameter('tb2_odom', '/turtlebot2/odom_world')
-        self.declare_parameter('rivstart', '/rivstart')
+        self.declare_parameter('rivstart', '/rivstart')      
+        self.declare_parameter('tb1_path', '/turtlebot1/path')
+        self.declare_parameter('tb2_path', '/turtlebot2/path')
 
         tb1_cmd_vel:str = self.get_parameter('tb1_cmd_vel').get_parameter_value().string_value
         tb2_cmd_vel:str = self.get_parameter('tb2_cmd_vel').get_parameter_value().string_value
         tb1_odom:str = self.get_parameter('tb1_odom').get_parameter_value().string_value
         tb2_odom:str = self.get_parameter('tb2_odom').get_parameter_value().string_value
         rivstart:str = self.get_parameter('rivstart').get_parameter_value().string_value
+        tb1_path:str = self.get_parameter('tb1_path').get_parameter_value().string_value
+        tb2_path:str = self.get_parameter('tb2_path').get_parameter_value().string_value
 
         self.cmd_vel_publisher1 = self.create_publisher(TwistStamped, tb1_cmd_vel, 10)
         self.cmd_vel_publisher2 = self.create_publisher(TwistStamped, tb2_cmd_vel, 10)
@@ -33,8 +37,8 @@ class PathMPC(Node):
         self.create_subscription(Odometry, tb1_odom, self.odom_callback1, 10)
         self.create_subscription(Odometry, tb2_odom, self.odom_callback2, 10)
         self.create_subscription(Bool, rivstart, self.turn_off_callback, 10)
-        self.create_subscription(Path, '/turtlebot1/path', self.path_callback1, 10)
-        self.create_subscription(Path, '/turtlebot1/path', self.path_callback2, 10)
+        self.create_subscription(Path, tb1_path, self.path_callback1, 10)
+        self.create_subscription(Path, tb2_path, self.path_callback2, 10)
         self.create_subscription(OccupancyGrid, 'map', self.map_callback, 10)
 
         self.x1 = 0.0
