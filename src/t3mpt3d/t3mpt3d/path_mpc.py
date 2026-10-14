@@ -66,6 +66,9 @@ class PathMPC(Node):
 
         self.turn_off = False
 
+        self.tb1_stopped = False
+        self.tb2_stopped = False
+
         ts = 0.1
         self.N = 40 # Horizon
 
@@ -183,7 +186,7 @@ class PathMPC(Node):
 
             # Compute once per call, not per horizon step
             obs_x, obs_y = self.closest_occupied(x, y, self.latest_map)
-            if obs_x == None:
+            if obs_x == None or self.tb1_stopped or self.tb2_stopped:
                 obs_x, obs_y = x + 50.0, y + 50.0
             for k in range(N + 1):
                 tvp_template['_tvp', k, 'other_x'] = pred[k, 0]
@@ -296,6 +299,7 @@ class PathMPC(Node):
             new_cmd.twist.angular.z = 0.0
             self.cmd_vel_publisher1.publish(new_cmd)
             tb3_1_stop = True
+            self.tb1_stopped = True
         if len(self.path2) == 0:
             self.pred2 = np.tile([self.x2, self.y2], (self.N + 1, 1))
             new_cmd = TwistStamped()
@@ -303,6 +307,7 @@ class PathMPC(Node):
             new_cmd.twist.angular.z = 0.0
             self.cmd_vel_publisher2.publish(new_cmd)
             tb3_2_stop = True
+            self.tb2_stopped = True
         if self.turn_off:
             return None
 
