@@ -107,7 +107,7 @@ def generate_launch_description():
 
     plank_controller_node = Node(
         package='t3mpt3d',
-        executable='plank',
+        executable='plank_node',
         name='plank_node',
         output='screen',
         parameters=[
@@ -122,7 +122,7 @@ def generate_launch_description():
     )
     plank_planner_node = Node(
             package='t3mpt3d',
-            executable='plank_planner',
+            executable='plank_planner_node',
             name='plank_planner_node',
             output='screen',
             parameters=[
