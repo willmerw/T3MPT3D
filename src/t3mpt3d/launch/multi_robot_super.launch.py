@@ -83,7 +83,9 @@ def generate_launch_description():
                      'tb1_map_topic':f'{TB1_NAME}/map',
                      'tb2_map_topic':f'{TB2_NAME}/map',
                      'tb1_odom_world':f'{TB1_NAME}/odom_world',
-                     'tb2_odom_world':f'{TB2_NAME}/odom_world',}]
+                     'tb2_odom_world':f'{TB2_NAME}/odom_world',
+                     'clear_rad': 0.15,
+                     }]
     )
 
     frontier_detector = Node(
@@ -174,6 +176,6 @@ def generate_launch_description():
         frontier_detector,
         odom_to_world,
         path_follow,
-        plank_controller_node,   # <--- Added here
-        plank_planner_node,
+        #plank_controller_node,   # <--- Added here
+        #plank_planner_node,
     ])

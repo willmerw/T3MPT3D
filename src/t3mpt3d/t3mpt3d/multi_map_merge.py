@@ -10,6 +10,8 @@ import cv2
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
 from tf2_ros import Buffer, TransformListener, TransformException
 
+from t3mpt3d.navigation_node import disk_offsets
+
 class MultiMapMerge(Node):
     def __init__(self):
         super().__init__('multi_map_merge')
@@ -20,6 +22,8 @@ class MultiMapMerge(Node):
         self.declare_parameter("tb1_odom_world", "turtlebot1/odom_world")
         self.declare_parameter("tb2_odom_world", "turtlebot2/odom_world")
 
+        self.declare_parameter('clear_rad', 0.15)
+
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
@@ -29,8 +33,13 @@ class MultiMapMerge(Node):
         tb1_odom_world: str = self.get_parameter("tb1_odom_world").get_parameter_value().string_value
         tb2_odom_world: str = self.get_parameter("tb2_odom_world").get_parameter_value().string_value
 
+        self.clear_rad: float = self.get_parameter('clear_rad').get_parameter_value().double_value
+
         self.p1 = []
         self.p2 = []
+        self.visited = []
+        self.last_stored = [None,None]
+        self.visit_step = 0.05
 
         self.odom1_sub = message_filters.Subscriber(
                     self, Odometry, tb1_odom_world,10
@@ -62,10 +71,19 @@ class MultiMapMerge(Node):
         self.map_pub = self.create_publisher(OccupancyGrid, 'map', 1)
         self.get_logger().info("Map Synchronizer and TF2 Listener started.")
 
+    def remember(self, i ,p):
+        last = self.last_stored[i]
+        if last is None or np.hypot(p[0] - last[0], p[1] - last[1]) > self.visit_step:
+            self.visited.append(p)
+            self.last_stored[i] = p
+
     def odom_callback(self,odom1_msg,odom2_msg):
         self.p1 = [odom1_msg.pose.pose.position.x, odom1_msg.pose.pose.position.y]
 
         self.p2 = [odom2_msg.pose.pose.position.x, odom2_msg.pose.pose.position.y]
+
+        self.remember(0, self.p1)
+        self.remember(1, self.p2)
 
     def map_callback(self, map1_msg: OccupancyGrid, map2_msg: OccupancyGrid):
         frame1 = map1_msg.header.frame_id.lstrip('/')
@@ -122,21 +140,17 @@ class MultiMapMerge(Node):
         merged = np.where(aligned_g1 != -1, aligned_g1, aligned_g2)
 
         #Clear free space round robots
-        if self.p1 and self.p2:
-            robot_coords = [
-                (self.p1[0], self.p1[1]),
-                (self.p2[0], self.p2[1])
-            ]
+        if self.visited:
+            p = np.array(self.visited)
+            cx = np.round((p[:,0] - union_min_x)/ res).astype(int)
+            cy = np.round((p[:,1] - union_min_y)/ res).astype(int)
+            dr, dc = disk_offsets(self.clear_rad, res)
+            rows = cy[:,None] + dr[None, :]
+            cols = cx[:,None] + dc[None, :]
 
-            for rx, ry in robot_coords:
-                cx = int(round((rx - union_min_x) / res))
-                cy = int(round((ry - union_min_y) / res))
+            ok = (rows >= 0) & (rows < union_h) & (cols >= 0) & (cols < union_w)
 
-                for dy in range(-1, 2):
-                    for dx in range(-1, 2):
-                        nx, ny = cx + dx, cy + dy
-                        if 0 <= nx < union_w and 0 <= ny < union_h:
-                            merged[ny, nx] = 0  # free space
+            merged[rows[ok], cols[ok]] = 0
 
         # 8. Construct output OccupancyGrid message
         out_msg = OccupancyGrid()
