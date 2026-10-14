@@ -176,6 +176,6 @@ def generate_launch_description():
         frontier_detector,
         odom_to_world,
         path_follow,
-        #plank_controller_node,   # <--- Added here
-        #plank_planner_node,
+        plank_controller_node,   # <--- Added here
+        plank_planner_node,
     ])
