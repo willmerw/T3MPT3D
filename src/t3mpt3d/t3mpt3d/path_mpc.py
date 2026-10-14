@@ -16,7 +16,7 @@ class PathMPC(Node):
         self.declare_parameter('tb2_cmd_vel', '/turtlebot2/cmd_vel')
         self.declare_parameter('tb1_odom', '/turtlebot1/odom_world')
         self.declare_parameter('tb2_odom', '/turtlebot2/odom_world')
-        self.declare_parameter('rivstart', '/rivstart')      
+        self.declare_parameter('rivstart', '/rivstart')
 
         tb1_cmd_vel:str = self.get_parameter('tb1_cmd_vel').get_parameter_value().string_value
         tb2_cmd_vel:str = self.get_parameter('tb2_cmd_vel').get_parameter_value().string_value
@@ -26,7 +26,7 @@ class PathMPC(Node):
 
         self.cmd_vel_publisher1 = self.create_publisher(TwistStamped, tb1_cmd_vel, 10)
         self.cmd_vel_publisher2 = self.create_publisher(TwistStamped, tb2_cmd_vel, 10)
-        
+
 
         self.timer = self.create_timer(0.1, self.timer_callback)
 
@@ -130,9 +130,9 @@ class PathMPC(Node):
 
         # Input Constraints
         mpc.bounds['lower','_u','vx'] = 0.0
-        mpc.bounds['upper','_u','vx'] =  0.2
-        mpc.bounds['lower','_u','vt'] = -0.5
-        mpc.bounds['upper','_u','vt'] =  0.5
+        mpc.bounds['upper','_u','vx'] =  0.1
+        mpc.bounds['lower','_u','vt'] = -0.25
+        mpc.bounds['upper','_u','vt'] =  0.25
 
 
         safe_distance = 0.3

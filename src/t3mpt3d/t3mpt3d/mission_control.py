@@ -49,8 +49,8 @@ class MissionControlNode(Node):
         self.plank_pos_subscriptions = {}
         self.plank_reached_subscriptions = {}
         self.reached_subscriptions = {}
-        self.plank_pos1 = [0.0,0.0]
-        self.plank_pos2 =[1.0,0.0]
+        self.plank_pos1 = [-1.0,-1.0]
+        self.plank_pos2 =[-1.0,-1.4]
         self.goal = [0,0,0]
         self.found_plank = False
         self.reached =[]
