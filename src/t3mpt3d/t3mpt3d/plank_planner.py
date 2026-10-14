@@ -186,9 +186,6 @@ class PathPlannerNode(Node):
             r_y = np.random.uniform(origin_y, origin_y+map_height)
             random_pt = np.array([r_x, r_y], dtype=float)
 
-            #random_pt = (np.random.default_rng(0).uniform(x_min, x_max), .uniform(y_min, y_max))
-
-
             _, closest_node = self.tree.get_closest_node(random_pt)
             d = np.array(random_pt - closest_node.pt)
             d_norm = np.linalg.norm(d)
@@ -199,7 +196,6 @@ class PathPlannerNode(Node):
 
             if d_norm < self.node_max_dist:
                 new_node = TreeNode(pt=random_pt,parent=closest_node)
-
 
             else:
                 new_pt = border_pt
