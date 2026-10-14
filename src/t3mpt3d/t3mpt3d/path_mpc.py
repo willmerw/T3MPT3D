@@ -279,11 +279,6 @@ class PathMPC(Node):
 
     def timer_callback(self):
         if self.turn_off:
-            new_cmd = TwistStamped()
-            new_cmd.twist.linear.x = 0.0
-            new_cmd.twist.angular.z = 0.0
-            self.cmd_vel_publisher1.publish(new_cmd)
-            self.cmd_vel_publisher2.publish(new_cmd)
             return
         tb3_1_stop = False
         tb3_2_stop = False
