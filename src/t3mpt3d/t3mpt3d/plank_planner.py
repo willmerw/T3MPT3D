@@ -72,8 +72,10 @@ class PathPlannerNode(Node):
             depth=10,
             durability=DurabilityPolicy.TRANSIENT_LOCAL
         )
+        plank_qos = QoSProfile(depth=1, durability=DurabilityPolicy.VOLATILE,
+                                       reliability=ReliabilityPolicy.RELIABLE)
 
-        self.start = [0.0,0.0,0.0] #x,y,th1,th2,thp
+        self.start = [0.0,0.0,0.0] #x,y, thp
         self.r = 0.0 # Plank radius
         self.goal = [0.0,0.0] #x,y
         self.pose_path = []
@@ -97,8 +99,8 @@ class PathPlannerNode(Node):
         self.plank_path_pub = self.create_publisher(MarkerArray, '/plank_path_vis', transient_qos) #Planks on the path
 
         #HARRYS FLAGGOR
-        self.start = False
-        self.start_sub = self.create_subscription(Bool, '/rivstart',self._on_start,10)
+        self.rivstart = False
+        self.start_sub = self.create_subscription(Bool, '/rivstart',self._on_start, plank_qos)
 
 
         # Subscribers
@@ -106,7 +108,7 @@ class PathPlannerNode(Node):
         self.map_sub = self.create_subscription(OccupancyGrid, '/map', self._on_map, default_qos)
 
         self.plank_received = False
-        self.plank_sub = self.create_subscription(PolygonStamped, '/plank', self._on_plank, default_qos)
+        self.plank_sub = self.create_subscription(PolygonStamped, '/plank', self._on_plank, plank_qos)
 
         self.goal_received = False
         self.goal_sub = self.create_subscription(PoseStamped, '/goal', self._on_goal, default_qos)
@@ -114,53 +116,56 @@ class PathPlannerNode(Node):
         # State
         self._latest_map: Optional[OccupancyGrid] = None
 
-        self.get_logger().info('PathPlannerNode initialized.')
+        self.get_logger().info('PathPlannerNode initialized==="=="=#=#=="#="#=#="="#=#"="#.')
 
     def _on_start(self,start_msg):
-        self.start = start_msg.data
+        self.rivstart = start_msg.data
+        self.get_logger().info("RAISING SAILS")
 
     def _on_map(self,map_msg):
+        if not self.rivstart:
+            return
+        if not self.plank_received:
+            return
+        if not self.goal_received:
+            return
         if not self.map_received:
             self.map_received = True
             self.map = map_msg
             self.publish_goal(self.goal)
             self.plan_path(map_msg)
+            self.get_logger().info("PLANNING TO WALK THE PLANK")
 
     def _on_plank(self,plank_msg):
+        print(plank_msg)
         if not self.plank_received:
             self.plank_received = True
-            pt1 = plank_msg.polygon.points[0][:2]
-            pt2 = plank_msg.polygon.points[1][:2]
+            pt1x = plank_msg.polygon.points[0].x
+            pt2x = plank_msg.polygon.points[1].x
+            pt1y = plank_msg.polygon.points[0].y
+            pt2y = plank_msg.polygon.points[1].y
+            pt1 = np.array([pt1x,pt1y])
+            pt2 = np.array([pt2x,pt2y])
             d = pt2-pt1
             self.r = np.linalg.norm(d)/2
-            thp = np.atan2(d[1],d[0])
+            thp = np.arctan2(d[1],d[0])
             pt = pt1 + d/2
             x = pt[0]
             y = pt[1]
-            self.start[x,y,thp]
+            self.start = [x,y,thp]
+            self.get_logger().info("THE SHIP IS READY")
 
 
     def _on_goal(self,goal_msg):
-        if not self.received_goal:
+        if not self.goal_received:
             self.goal_received = True
             x = goal_msg.pose.position.x
             y = goal_msg.pose.position.y
-            self.goal[x,y]
+            self.goal = [x,y]
+            self.get_logger().info("THE GOAL IS SET")
 
 
     def plan_path(self,map_msg: OccupancyGrid):
-        if not self.start:
-            return
-
-        self.get_logger().info("RAISING SAILS")
-
-        if not self.plank_received:
-            return
-
-        self.get_logger().info("THE SHIP IS READY")
-
-        if not self.received_goal:
-            return
 
         self.get_logger().info("READ THE MAP YE DOGS!")
 

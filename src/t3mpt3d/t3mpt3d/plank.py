@@ -125,8 +125,12 @@ class PlankMPC(Node):
     def _on_plank(self,plank_msg):
         if not self.plank_received:
             self.plank_received = True
-            pt1 = plank_msg.polygon.points[0][:2]
-            pt2 = plank_msg.polygon.points[1][:2]
+            pt1x = plank_msg.polygon.points[0].x
+            pt2x = plank_msg.polygon.points[1].x
+            pt1y = plank_msg.polygon.points[0].y
+            pt2y = plank_msg.polygon.points[1].y
+            pt1 = np.array([pt1x,pt1y])
+            pt2 = np.array([pt2x,pt2y])
             d = pt2-pt1
             self.r = np.linalg.norm(d)/2
 
@@ -159,7 +163,7 @@ class PlankMPC(Node):
         th1 = self.p1[2]
         th2 = self.p2[2]
 
-        thp = np.atan2(d[1],d[0])
+        thp = np.arctan2(d[1],d[0])
 
         px,py = pxy
 
