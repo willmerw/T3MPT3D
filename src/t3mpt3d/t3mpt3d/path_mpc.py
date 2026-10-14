@@ -63,15 +63,13 @@ class PathMPC(Node):
         self.turn_off = False
 
         ts = 0.1
-        N = 40 # Horizon
+        self.N = 40 # Horizon
 
-        self.pred1 = np.zeros((N + 1, 2))
-        self.pred2 = np.zeros((N + 1, 2))
+        self.pred1 = np.zeros((self.N + 1, 2))
+        self.pred2 = np.zeros((self.N + 1, 2))
 
-        self.mpc1 = self.defineTBotMPC(self.model1, ts, N)
-        self.mpc2 = self.defineTBotMPC(self.model2, ts, N)
-        self.mpc1.settings.supress_ipopt_output()
-        self.mpc2.settings.supress_ipopt_output()
+        self.mpc1 = self.defineTBotMPC(self.model1, ts, self.N)
+        self.mpc2 = self.defineTBotMPC(self.model2, ts, self.N)
         self.mpc1.setup()
         self.mpc2.setup()
         self.mpc1.set_initial_guess()
@@ -120,6 +118,11 @@ class PathMPC(Node):
             'store_full_solution': True
         }
         mpc.set_param(**setup_mpc)
+        mpc.settings.nlpsol_opts = {
+        'ipopt.print_level': 0,   # no iteration table
+        'ipopt.sb': 'yes',        # no IPOPT banner
+        'print_time': 0,          # no CasADi timing summary
+        }
 
         mterm = (
             (model.x['x'] - model.tvp['ref_x'])**2 +
@@ -152,7 +155,7 @@ class PathMPC(Node):
 
         mpc.set_nl_cons(
             'closest_obstacle',
-            0.1 ** 2 - ((model.x['x'] - model.tvp['obs_x']) ** 2
+            0.2 ** 2 - ((model.x['x'] - model.tvp['obs_x']) ** 2
                         + (model.x['y'] - model.tvp['obs_y']) ** 2),
             ub=0.0,
             soft_constraint=False
@@ -283,12 +286,14 @@ class PathMPC(Node):
         tb3_1_stop = False
         tb3_2_stop = False
         if len(self.path1) == 0:
+            self.pred1 = np.tile([self.x1, self.y1], (self.N + 1, 1))
             new_cmd = TwistStamped()
             new_cmd.twist.linear.x = 0.0
             new_cmd.twist.angular.z = 0.0
             self.cmd_vel_publisher1.publish(new_cmd)
             tb3_1_stop = True
         if len(self.path2) == 0:
+            self.pred2 = np.tile([self.x2, self.y2], (self.N + 1, 1))
             new_cmd = TwistStamped()
             new_cmd.twist.linear.x = 0.0
             new_cmd.twist.angular.z = 0.0
