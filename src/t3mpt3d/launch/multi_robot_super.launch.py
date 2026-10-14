@@ -173,6 +173,7 @@ def generate_launch_description():
         tf_world_to_tb3_2,  # <--- Added
         frontier_detector,
         odom_to_world,
-        path_follow
-        #plank_controller_node   # <--- Added here
+        path_follow,
+        plank_controller_node,   # <--- Added here
+        plank_planner_node,
     ])
