@@ -513,6 +513,19 @@ Visualization Manager:
     Value: true
     Frames:
       All Enabled: true
+  - Alpha: 1
+    Class: rviz_default_plugins/Polygon
+    Color: 160; 32; 240
+    Enabled: true
+    Name: Plank
+    Topic:
+      Depth: 1
+      Durability Policy: Transient Local
+      Filter size: 10
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /plank
+    Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
