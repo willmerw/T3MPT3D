@@ -96,20 +96,21 @@ def generate_launch_description():
                      'target_frame':f'{TB1_NAME}/map'}],
     )
 
-    # plank_controller_node = Node(
-    #         package='t3mpt3d',                  # Replace with your package name
-    #         executable='plank',      # Replace with your executable name
-    #         name='plank_node',
-    #         output='screen',
-    #         parameters=[{'use_sim_time': False}], # Good practice if relying on Gazebo time
-    #         launch_arguments={
-    #             'tb1_cmd_vel': f'{TB1_NAME}/cmd_vel',
-    #             'tb2_cmd_vel': f'{TB2_NAME}/cmd_vel',
-    #             'tb1_odom_world': f'{TB1_NAME}/odom_world',
-    #             'tb2_odom_world': f'{TB2_NAME}/odom_world',
-    #                 }.items()
-    #     )
-    # Bridge for tb3_1 (Spawned at x=-2.0, y=-0.5)
+    plank_controller_node = Node(
+            package='t3mpt3d',
+            executable='plank',
+            name='plank_node',
+            output='screen',
+            parameters=[
+                {
+                    'use_sim_time': True,
+                    'tb1_cmd_vel': f'{TB1_NAME}/cmd_vel',
+                    'tb2_cmd_vel': f'{TB2_NAME}/cmd_vel',
+                    'tb1_odom_world': f'{TB1_NAME}/odom_world',
+                    'tb2_odom_world': f'{TB2_NAME}/odom_world',
+                }
+            ],
+        )
     tf_world_to_tb3_1 = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
@@ -128,13 +129,18 @@ def generate_launch_description():
         parameters=[{'use_sim_time': False}]
     )
     path_follow = Node(
-             package='t3mpt3d',
-             executable='path_mpc',
-             name='path_mpc',
-             output='screen',
-             parameters=[{'use_sim_time': False,
-
-                          }] # Good practice if relying on Gazebo time
+        package='t3mpt3d',
+        executable='path_mpc',
+        name='path_mpc',
+        output='screen',
+        parameters=[{'use_sim_time': True,
+                'tb1_cmd_vel': f'{TB1_NAME}/cmd_vel',
+                'tb2_cmd_vel': f'{TB2_NAME}/cmd_vel',
+                'tb1_odom': f'{TB1_NAME}/odom_world',
+                'tb2_odom': f'{TB2_NAME}/odom_world',
+                'tb1_path': f'{TB1_NAME}/path',
+                'tb2_path': f'{TB2_NAME}/path',
+                    }] # Good practice if relying on Gazebo time
     )
 
     # 3. ADD THE NODE TO THE RETURN LIST

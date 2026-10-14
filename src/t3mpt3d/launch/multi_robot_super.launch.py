@@ -74,7 +74,9 @@ def generate_launch_description():
         executable='map_merge_node',      # Replace with your executable name
         name='map_merge',
         output='screen',
-        parameters=[{'use_sim_time': True}] # Good practice if relying on Gazebo time
+        parameters=[{'use_sim_time': True,
+                     'tb1_map_topic':f'{TB1_NAME}/map',
+                     'tb2_map_topic':f'{TB2_NAME}/map'}] # Good practice if relying on Gazebo time
     )
 
     frontier_detector = Node(
