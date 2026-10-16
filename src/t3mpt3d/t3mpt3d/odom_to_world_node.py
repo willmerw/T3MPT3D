@@ -59,7 +59,7 @@ class MultiRobotOdomTransformer(Node):
     def odom_callback(self, msg: Odometry, robot_name: str):
         try:
             target_frame = self.TARGET_FRAME
-            source_frame = msg.header.frame_id.lstrip('/')
+            source_frame = msg.child_frame_id.lstrip('/')
 
             transform = self.tf_buffer.lookup_transform(
                 target_frame,
@@ -69,9 +69,6 @@ class MultiRobotOdomTransformer(Node):
             )
 
             # Extract translation values from the transform
-            tx = transform.transform.translation.x
-            ty = transform.transform.translation.y
-            tz = transform.transform.translation.z
 
             # Construct and publish the new Odometry message
             new_odom = Odometry()
@@ -80,10 +77,11 @@ class MultiRobotOdomTransformer(Node):
             new_odom.child_frame_id = msg.child_frame_id
 
             # Apply transform translation to the pose position
-            new_odom.pose.pose.position.x = msg.pose.pose.position.x + tx
-            new_odom.pose.pose.position.y = msg.pose.pose.position.y + ty
-            new_odom.pose.pose.position.z = msg.pose.pose.position.z + tz
-            new_odom.pose.pose.orientation = msg.pose.pose.orientation
+            t = transform.transform
+            new_odom.pose.pose.position.x = t.translation.x
+            new_odom.pose.pose.position.y = t.translation.y
+            new_odom.pose.pose.position.z = t.translation.z
+            new_odom.pose.pose.orientation = t.rotation
 
             new_odom.pose.covariance = msg.pose.covariance
             new_odom.twist = msg.twist
