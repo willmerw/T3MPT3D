@@ -59,6 +59,9 @@ class PlankMPC(Node):
         self.start = False
         self.start_sub = self.create_subscription(Bool, '/rivstart',self._on_start,10)
 
+        self.latest_map = None
+        self.path_sub = self.create_subscription(Path, '/map', self._on_map, 10)
+
         self.odom1_sub = message_filters.Subscriber(
             self, Odometry, tb1_odom_world,10
         )
@@ -72,24 +75,27 @@ class PlankMPC(Node):
 
         self.p1 = [0.0, 0.0, 0.0]
         self.p2 = [0.0, 0.0, 0.0]
+        self.prev_thp = None  # Track previous plank angle for continuity
 
         self.x_desired = 0.0
         self.y_desired = 0.0
         self.yaw_desired = 0.0
 
+
+
         self.plank = [0.0, 0.0, 0.0, 0.0, 0.0] #x,y,th1,th2,thp
 
-        self.r = 0.0
+        self.r = 0.5
         self.traj = []
 
-        self.model = definePlankModel(self.r)
+        self.model = self.definePlankModel(self.r)
         self.model.setup()
         self.path = [] #x,y,yaw
         self.path_i=0
         ts = 0.1
         N = 40 # horizon
 
-        self.mpc = definePlankMPC(self.model, ts, N)
+        self.mpc = self.definePlankMPC(self.model, ts, N)
 
         tvp_template = self.mpc.get_tvp_template()
         def tvp_fun(t_now):
@@ -101,6 +107,8 @@ class PlankMPC(Node):
 
         self.mpc.set_tvp_fun(tvp_fun)
         self.mpc.setup()
+    def _on_map(self,map_msg):
+        self.latest_map = map_msg
 
     def _on_start(self,start_msg):
         self.start = start_msg.data
@@ -161,11 +169,19 @@ class PlankMPC(Node):
         th1 = self.p1[2]
         th2 = self.p2[2]
 
-        thp = np.arctan2(d[1],d[0])
+        thp_raw = np.arctan2(d[1], d[0])
 
-        px,py = pxy
+        if self.prev_thp is None:
+            thp = thp_raw
+        else:
+            # Wrap the difference to [-pi, pi] to maintain continuity
+            diff = thp_raw - self.prev_thp
+            thp = self.prev_thp + np.arctan2(np.sin(diff), np.cos(diff))
 
-        self.plank = px,py,th1,th2,thp
+        self.prev_thp = thp
+        px, py = pxy
+
+        self.plank = px, py, th1, th2, thp
         marker = self.plank_marker(px,py,thp,1337)
         self.plank_vis_pub.publish(marker)
         self.publish_plank_odom()
@@ -344,99 +360,197 @@ class PlankMPC(Node):
         self.marker_pub.publish(marker)
 
 
-def definePlankModel(r):
+    def definePlankModel(self,r):
 
-  model_type = 'continuous'
-  model = do_mpc.model.Model(model_type)
+        model_type = 'continuous'
+        model = do_mpc.model.Model(model_type)
 
-  # States
-  x = model.set_variable(var_type='_x', var_name='x', shape=(1,1))
-  y = model.set_variable(var_type='_x', var_name='y', shape=(1,1))
-  th1 = model.set_variable(var_type='_x', var_name='th1', shape=(1,1))
-  th2 = model.set_variable(var_type='_x', var_name='th2', shape=(1,1))
-  thp = model.set_variable(var_type='_x', var_name='thp', shape=(1,1))
-  r = 1.0
+        # States
+        x = model.set_variable(var_type='_x', var_name='x', shape=(1,1))
+        y = model.set_variable(var_type='_x', var_name='y', shape=(1,1))
+        th1 = model.set_variable(var_type='_x', var_name='th1', shape=(1,1))
+        th2 = model.set_variable(var_type='_x', var_name='th2', shape=(1,1))
+        thp = model.set_variable(var_type='_x', var_name='thp', shape=(1,1))
+        r = self.r
 
-  # Inputs
-  v1 = model.set_variable(var_type='_u', var_name='v1')
-  v2 = model.set_variable(var_type='_u', var_name='v2')
-  vth1 = model.set_variable(var_type='_u', var_name='vth1')
-  vth2 = model.set_variable(var_type='_u', var_name='vth2')
+        # Inputs
+        v1 = model.set_variable(var_type='_u', var_name='v1')
+        v2 = model.set_variable(var_type='_u', var_name='v2')
+        vth1 = model.set_variable(var_type='_u', var_name='vth1')
+        vth2 = model.set_variable(var_type='_u', var_name='vth2')
 
-  model.set_variable(var_type='_tvp', var_name='x_goal')
-  model.set_variable(var_type='_tvp', var_name='y_goal')
-  model.set_variable(var_type='_tvp', var_name='yaw_goal')
+        model.set_variable(var_type='_tvp', var_name='x_goal')
+        model.set_variable(var_type='_tvp', var_name='y_goal')
+        model.set_variable(var_type='_tvp', var_name='yaw_goal')
 
-  # Dynamics
-  model.set_rhs('x', ((v1*ca.cos(th1)+v2*ca.cos(th2))/2))
-  model.set_rhs('y', ((v1*ca.sin(th1)+v2*ca.sin(th2))/2))
-  model.set_rhs('th1', vth1)
-  model.set_rhs('th2', vth2)
-  model.set_rhs('thp', ((v2*ca.cos(th2)-v1*ca.cos(th1)) * -ca.sin(thp) + ((v2*ca.sin(th2) - v1*ca.sin(th1)) * ca.cos(thp)))/(2*r))
+        # Closest obstacle
+        model.set_variable(var_type='_tvp', var_name='obs_x1')
+        model.set_variable(var_type='_tvp', var_name='obs_y1')
+        model.set_variable(var_type='_tvp', var_name='obs_x2')
+        model.set_variable(var_type='_tvp', var_name='obs_y2')
 
-  return model
+        # Dynamics
+        model.set_rhs('x', ((v1*ca.cos(th1)+v2*ca.cos(th2))/2))
+        model.set_rhs('y', ((v1*ca.sin(th1)+v2*ca.sin(th2))/2))
+        model.set_rhs('th1', vth1)
+        model.set_rhs('th2', vth2)
+        model.set_rhs('thp', ((v2*ca.cos(th2)-v1*ca.cos(th1)) * -ca.sin(thp) + ((v2*ca.sin(th2) - v1*ca.sin(th1)) * ca.cos(thp)))/(2*r))
 
-def definePlankMPC(model, ts, N):
-  mpc = do_mpc.controller.MPC(model)
-  setup_mpc = {
-      'n_horizon': N,
-      't_step': ts,
-      'n_robust': 1,
-      'store_full_solution': True
-  }
-  mpc.set_param(**setup_mpc)
-  mpc.settings.nlpsol_opts = {
-          'ipopt.print_level': 0,   # no iteration table
-          'ipopt.sb': 'yes',        # no IPOPT banner
-          'print_time': 0,          # no CasADi timing summary
-          }
+        return model
 
-  mterm = (model.x['x'] - model.tvp['x_goal'])**2 + (model.x['y'] - model.tvp['y_goal'])**2
-  lterm = (model.x['x'] - model.tvp['x_goal'])**2 + (model.x['y'] - model.tvp['y_goal'])**2 + (model.x['thp'] - model.tvp['yaw_goal'])**2
-  mpc.set_objective(mterm=mterm, lterm=lterm)
-  mpc.set_rterm(v1=1e-2, v2=1e-2, vth1=1e-2,vth2=1e-2)
+    def definePlankMPC(self,model, ts, N):
+        mpc = do_mpc.controller.MPC(model)
+        setup_mpc = {
+            'n_horizon': N,
+            't_step': ts,
+            'n_robust': 1,
+            'store_full_solution': True
+        }
+        mpc.set_param(**setup_mpc)
+        mpc.settings.nlpsol_opts = {
+                'ipopt.print_level': 0,   # no iteration table
+                'ipopt.sb': 'yes',        # no IPOPT banner
+                'print_time': 0,          # no CasADi timing summary
+                }
 
-  # State Bounds
-  #mpc.bounds['lower','_x','x'] = -10.0
-  #mpc.bounds['upper','_x','x'] =  10.0
-  #mpc.bounds['lower','_x','y'] = -10.0
-  #mpc.bounds['upper','_x','y'] =  10.0
+        mterm = (model.x['x'] - model.tvp['x_goal'])**2 + (model.x['y'] - model.tvp['y_goal'])**2
+        lterm = (model.x['x'] - model.tvp['x_goal'])**2 + (model.x['y'] - model.tvp['y_goal'])**2 + (model.x['thp'] - model.tvp['yaw_goal'])**2
+        mpc.set_objective(mterm=mterm, lterm=lterm)
+        mpc.set_rterm(v1=1e-2, v2=1e-2, vth1=1e-2,vth2=1e-2)
 
-  # Input Constraints
-  mpc.bounds['lower','_u','v1'] = 0.0
-  mpc.bounds['upper','_u','v1'] =  0.2
-  mpc.bounds['lower','_u','v2'] = 0.0
-  mpc.bounds['upper','_u','v2'] =  0.2
-  mpc.bounds['lower','_u','vth1'] = -0.5
-  mpc.bounds['upper','_u','vth1'] =  0.5
-  mpc.bounds['lower','_u','vth2'] = -0.5
-  mpc.bounds['upper','_u','vth2'] =  0.5
+        # State Bounds
+        #mpc.bounds['lower','_x','x'] = -10.0
+        #mpc.bounds['upper','_x','x'] =  10.0
+        #mpc.bounds['lower','_x','y'] = -10.0
+        #mpc.bounds['upper','_x','y'] =  10.0
 
-
-  v1_par = model.u['v1'] * ca.cos(model.x['th1'] - model.x['thp'])
-  v2_par = model.u['v2'] * ca.cos(model.x['th2'] - model.x['thp'])
-
-  v_diff = v1_par - v2_par
-
-  mpc.set_nl_cons(
-    'parallel_movement_ub',
-    v_diff,
-    ub=0.0,
-    soft_constraint=True,
-    penalty_term_cons=1e2
-  )
-
-  mpc.set_nl_cons(
-    'parallel_movement_lb',
-    -v_diff,
-    ub=0.0,
-    soft_constraint=True,
-    penalty_term_cons=1e2
-  )
+        # Input Constraints
+        mpc.bounds['lower','_u','v1'] = 0.0
+        mpc.bounds['upper','_u','v1'] =  0.2
+        mpc.bounds['lower','_u','v2'] = 0.0
+        mpc.bounds['upper','_u','v2'] =  0.2
+        mpc.bounds['lower','_u','vth1'] = -0.5
+        mpc.bounds['upper','_u','vth1'] =  0.5
+        mpc.bounds['lower','_u','vth2'] = -0.5
+        mpc.bounds['upper','_u','vth2'] =  0.5
 
 
-  return mpc
+        v1_par = model.u['v1'] * ca.cos(model.x['th1'] - model.x['thp'])
+        v2_par = model.u['v2'] * ca.cos(model.x['th2'] - model.x['thp'])
 
+        v_diff = v1_par - v2_par
+
+        mpc.set_nl_cons(
+            'parallel_movement_ub',
+            v_diff,
+            ub=0.0,
+            soft_constraint=True,
+            penalty_term_cons=1e2
+        )
+
+        mpc.set_nl_cons(
+            'parallel_movement_lb',
+            -v_diff,
+            ub=0.0,
+            soft_constraint=True,
+            penalty_term_cons=1e2
+        )
+        r = self.r
+        # Endpoint definitions
+        x_p1 = model.x['x'] + r * ca.cos(model.x['thp'])
+        y_p1 = model.x['y'] + r * ca.sin(model.x['thp'])
+        x_p2 = model.x['x'] - r * ca.cos(model.x['thp'])
+        y_p2 = model.x['y'] - r * ca.sin(model.x['thp'])
+
+        # 4 Constraints (2 endpoints vs 2 obstacles)
+        mpc.set_nl_cons(
+            'obs_p1_1',
+            0.4 ** 2 - ((x_p1 - model.tvp['obs_x1']) ** 2 + (y_p1 - model.tvp['obs_y1']) ** 2),
+            ub=0.0,
+            soft_constraint=False
+        )
+        mpc.set_nl_cons(
+            'obs_p1_2',
+            0.4 ** 2 - ((x_p1 - model.tvp['obs_x2']) ** 2 + (y_p1 - model.tvp['obs_y2']) ** 2),
+            ub=0.0,
+            soft_constraint=False
+        )
+        mpc.set_nl_cons(
+            'obs_p2_1',
+            0.4 ** 2 - ((x_p2 - model.tvp['obs_x1']) ** 2 + (y_p2 - model.tvp['obs_y1']) ** 2),
+            ub=0.0,
+            soft_constraint=False
+        )
+        mpc.set_nl_cons(
+            'obs_p2_2',
+            0.4 ** 2 - ((x_p2 - model.tvp['obs_x2']) ** 2 + (y_p2 - model.tvp['obs_y2']) ** 2),
+            ub=0.0,
+            soft_constraint=False
+        )
+
+        tvp_template = mpc.get_tvp_template()
+        def tvp_fun(t_now):
+            # Evaluate using current robot position estimation
+            x_val = mpc.x0['x']
+            y_val = mpc.x0['y']
+            thp_val = mpc.x0['thp']
+
+            obs_x1, obs_y1, obs_x2, obs_y2 = self.closest_occupied(x_val, y_val,thp_val, self.r, self.latest_map)
+
+            for k in range(N + 1):
+                tvp_template['_tvp', k, 'obs_x1'] = obs_x1 if obs_x1 is not None else 0.0
+                tvp_template['_tvp', k, 'obs_y1'] = obs_y1 if obs_y1 is not None else 0.0
+                tvp_template['_tvp', k, 'obs_x2'] = obs_x2 if obs_x2 is not None else 0.0
+                tvp_template['_tvp', k, 'obs_y2'] = obs_y2 if obs_y2 is not None else 0.0
+
+            return tvp_template
+
+        mpc.set_tvp_fun(tvp_fun)
+
+
+        return mpc
+    def closest_occupied(self, x, y, thp, r, grid):
+        if grid is None:
+            return None, None, None, None
+
+        grid_array = np.array(grid.data).reshape(grid.info.height, grid.info.width)
+
+        # 1. Calculate the coordinates of both plank endpoints
+        x1 = x + r * np.cos(thp)
+        y1 = y + r * np.sin(thp)
+        x2 = x - r * np.cos(thp)
+        y2 = y - r * np.sin(thp)
+
+        def find_closest_to(pt_x, pt_y):
+            check_distance = 15
+            mini_step = 1
+            column = int((pt_x - grid.info.origin.position.x) / grid.info.resolution)
+            row = int((pt_y - grid.info.origin.position.y) / grid.info.resolution)
+
+            closest_cell = (None, None)
+            closest = float('inf')
+
+            for i in np.arange(-check_distance, check_distance + 1, mini_step):
+                for k in np.arange(-check_distance, check_distance + 1, mini_step):
+                    r_idx = row + int(i)
+                    c_idx = column + int(k)
+                    if (r_idx < 0 or r_idx >= grid.info.height or c_idx < 0 or c_idx >= grid.info.width):
+                        continue
+                    if grid_array[r_idx][c_idx] == 100:
+                        occ_x = grid.info.origin.position.x + c_idx * grid.info.resolution
+                        occ_y = grid.info.origin.position.y + r_idx * grid.info.resolution
+                        dist = np.hypot(occ_x - pt_x, occ_y - pt_y)
+                        if dist < closest:
+                            closest = dist
+                            closest_cell = (occ_x, occ_y)
+
+            return closest_cell[0], closest_cell[1]
+
+        # Find closest obstacle to Endpoint 1 and Endpoint 2 respectively
+        obs_x1, obs_y1 = find_closest_to(x1, y1)
+        obs_x2, obs_y2 = find_closest_to(x2, y2)
+
+        return obs_x1, obs_y1, obs_x2, obs_y2
 def main(): # Main Function
     rclpy.init()
     node = PlankMPC()

@@ -79,7 +79,7 @@ class PathPlannerNode(Node):
 
         self.received_start = False
         self.start = [0.0,0.0,0.0] #x,y, thp
-        self.r = 0.0 # Plank radius
+        self.r = 0.5 # Plank radius
         self.goal = [0.0,0.0] #x,y
         self.pose_path = []
 
@@ -275,7 +275,17 @@ class PathPlannerNode(Node):
             for leaf in self.leaves:
                 path = leaf.get_path_to_root()
                 path = self.maximize_clearance(path, map_msg)
+                path = self.cut_trim(path)
                 poses = []
+                for i in range(1,len(path)):
+                    prev_pt = np.array(path[i-1])
+                    pt = np.array(path[i])
+                    d = pt-prev_pt
+                    th = np.arctan2(d[1],d[0])
+                    poses.append([pt[0],pt[1],th])
+                valid_paths.append(path)
+                valid_pose_paths.append(poses)
+                """
                 for pt in path:
                     poses.append([pt[0],pt[1],thp])
 
@@ -299,7 +309,7 @@ class PathPlannerNode(Node):
                     valid_paths.append(path)
                 if len(valid_paths) < 1:
                     self.get_logger().info("YER HOLDIN THE MAP UPSIDE DOWN YE SCURVY DOG!")
-
+                """
                 self.get_logger().info(f"NODES IN TREE: {len(self.tree_pts)}")
         print(f"DONE, Found {len(valid_paths)} valid paths")
 
@@ -332,6 +342,32 @@ class PathPlannerNode(Node):
         self.get_logger().info("OOH I CAN SMELL THE RUM OOOZIN")
 
         return path
+
+
+    def cut_trim(self,path, dist=0.1):
+        path = np.array(path)
+        if len(path) < 2:
+            return path
+
+        # 1. Calculate cumulative distances along the path
+        diffs = np.diff(path, axis=0)
+        segment_lengths = np.linalg.norm(diffs, axis=1)
+        cumulative_dist = np.insert(np.cumsum(segment_lengths), 0, 0)
+        total_length = cumulative_dist[-1]
+
+        # 2. Generate target distances at uniform intervals
+        target_dists = np.arange(0, total_length, dist)
+        if target_dists[-1] != total_length:
+            target_dists = np.append(target_dists, total_length)
+
+        # 3. Interpolate new points
+        new_path = np.zeros((len(target_dists), path.shape[1]))
+        for i in range(path.shape[1]):
+            new_path[:, i] = np.interp(target_dists, cumulative_dist, path[:, i])
+
+        return new_path
+
+
 
     def evaluate_valid_paths(self,paths,pose_paths):
         scores = []
