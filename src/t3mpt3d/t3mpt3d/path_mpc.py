@@ -9,9 +9,11 @@ from nav_msgs.msg import Odometry, Path, OccupancyGrid
 import numpy as np
 import math
 
+# Node that runs two separate MPC:s
 class PathMPC(Node):
     def __init__(self):
         super().__init__('turtle_mpc_node')
+        # Name-spaced parameters
         self.declare_parameter('tb1_cmd_vel', '/turtlebot1/cmd_vel')
         self.declare_parameter('tb2_cmd_vel', '/turtlebot2/cmd_vel')
         self.declare_parameter('tb1_odom', '/turtlebot1/odom_world')
@@ -28,18 +30,25 @@ class PathMPC(Node):
         tb1_path:str = self.get_parameter('tb1_path').get_parameter_value().string_value
         tb2_path:str = self.get_parameter('tb2_path').get_parameter_value().string_value
 
+        # Publishes one velocity command per robot
         self.cmd_vel_publisher1 = self.create_publisher(TwistStamped, tb1_cmd_vel, 10)
         self.cmd_vel_publisher2 = self.create_publisher(TwistStamped, tb2_cmd_vel, 10)
 
+        # Runs every 0.1 seconds, executes the code
         self.timer = self.create_timer(0.1, self.timer_callback)
 
+        # Odom subscribers for both robots
         self.create_subscription(Odometry, tb1_odom, self.odom_callback1, 10)
         self.create_subscription(Odometry, tb2_odom, self.odom_callback2, 10)
+        # Rivstart is for shutting down the node and starting plank MPC
         self.create_subscription(Bool, rivstart, self.turn_off_callback, 10)
+        # The goal paths for tb1 and tb2
         self.create_subscription(Path, tb1_path, self.path_callback1, 10)
         self.create_subscription(Path, tb2_path, self.path_callback2, 10)
+        # The map
         self.create_subscription(OccupancyGrid, 'map', self.map_callback, 10)
 
+        # Params to keep track of poses
         self.x1 = 0.0
         self.y1 = 0.0
         self.yaw1 = 0.0
@@ -47,6 +56,7 @@ class PathMPC(Node):
         self.y2 = 0.0
         self.yaw2 = 0.0
 
+        # To store the paths
         self.path1 = []
         self.path_header1=""
         self.path2 = []
@@ -54,32 +64,38 @@ class PathMPC(Node):
 
         self.latest_map = None
 
+        # Defing both models
         self.model1 = self.defineTBotModel()
         self.model2 = self.defineTBotModel()
         self.model1.setup()
         self.model2.setup()
 
+        # Gets switched when rivstart arrives
         self.turn_off = False
 
+        # If either robot has stopped, turn of placing constraint at nearest obstacle
         self.tb1_stopped = False
         self.tb2_stopped = False
 
-        ts = 0.1
+        ts = 0.1 # Sampling time
         self.N = 40 # Horizon
 
+        # Lists to store the bots predictions
         self.pred1 = np.zeros((self.N + 1, 2))
         self.pred2 = np.zeros((self.N + 1, 2))
 
+        # Defining both MPC:s
         self.mpc1 = self.defineTBotMPC(self.model1, ts, self.N)
         self.mpc2 = self.defineTBotMPC(self.model2, ts, self.N)
         self.mpc1.setup()
         self.mpc2.setup()
+
+        # Setting initial geuss once, allows warm-up
         self.mpc1.set_initial_guess()
         self.mpc2.set_initial_guess()
 
-
+    # Define a tbot model
     def defineTBotModel(self):
-
         model_type = 'continuous'
         model = do_mpc.model.Model(model_type)
 
@@ -111,7 +127,9 @@ class PathMPC(Node):
 
         return model
 
+    # Define a tbot MPC
     def defineTBotMPC(self, model, ts, N):
+        # Creating the MPC
         mpc = do_mpc.controller.MPC(model)
         setup_mpc = {
             'n_horizon': N,
@@ -120,12 +138,14 @@ class PathMPC(Node):
             'store_full_solution': True
         }
         mpc.set_param(**setup_mpc)
+        # Removing output
         mpc.settings.nlpsol_opts = {
         'ipopt.print_level': 0,   # no iteration table
         'ipopt.sb': 'yes',        # no IPOPT banner
         'print_time': 0,          # no CasADi timing summary
         }
 
+        # Defining cost function
         mterm = (
             (model.x['x'] - model.tvp['ref_x'])**2 +
             (model.x['y'] - model.tvp['ref_y'])**2
@@ -143,9 +163,10 @@ class PathMPC(Node):
         mpc.bounds['lower','_u','vt'] = -0.5 # -0.5
         mpc.bounds['upper','_u','vt'] =  0.5 # 0.5
 
-
+        # Distance to be kept between tbs 
         safe_distance = 0.3
 
+        # Dynamic constraint for the other robot
         mpc.set_nl_cons(
             'other_robot',
             safe_distance**2 - (
@@ -155,6 +176,7 @@ class PathMPC(Node):
             ub=0.0
         )
 
+        # Dynamic constraint at the closest occupied cell in the occupancy mao
         mpc.set_nl_cons(
             'closest_obstacle',
             0.2 ** 2 - ((model.x['x'] - model.tvp['obs_x']) ** 2
@@ -163,9 +185,11 @@ class PathMPC(Node):
             soft_constraint=False
         )
 
+        # Template for time-varying parameters
         tvp_template = mpc.get_tvp_template()
 
         def tvp_fun(t_now):
+            # Selecting model
             if model is self.model1:
                 pred = self.pred2
                 path = self.path1
@@ -177,31 +201,34 @@ class PathMPC(Node):
                 x = self.x2
                 y = self.y2
 
+            # Don't use whole path every time
             start_idx = self.closest_path_index(path, x, y)
 
-            # Compute once per call, not per horizon step
+            # Compute closest occupied once per call, not per horizon step
             obs_x, obs_y = self.closest_occupied(x, y, self.latest_map)
+            # "Removing" constraint by setting far away
             if obs_x == None or self.tb1_stopped or self.tb2_stopped:
                 obs_x, obs_y = x + 50.0, y + 50.0
             for k in range(N + 1):
+                # Moving other robot constraint along horizon
                 tvp_template['_tvp', k, 'other_x'] = pred[k, 0]
                 tvp_template['_tvp', k, 'other_y'] = pred[k, 1]
 
+                # Keeping obstacle constraint constant along horizon 
                 tvp_template['_tvp', k, 'obs_x'] = obs_x
                 tvp_template['_tvp', k, 'obs_y'] = obs_y
 
+                # Updating goal
                 if len(path) > 0:
                     idx = min(start_idx + k, len(path) - 1)
                     tvp_template['_tvp', k, 'ref_x'] = path[idx][0]
                     tvp_template['_tvp', k, 'ref_y'] = path[idx][1]
 
             return tvp_template
-
         mpc.set_tvp_fun(tvp_fun)
-
-
         return mpc
 
+    # Finding closest path index
     def closest_path_index(self, path, x, y):
         if not path:
             return 0
@@ -211,33 +238,41 @@ class PathMPC(Node):
         ]
         return int(np.argmin(distances))
 
+    # Finding closest occupied cell
     def closest_occupied(self, x, y, grid):
         if grid == None:
             return None, None
+        # Converting to shape (h, w)
         grid_array = np.array(grid.data).reshape(grid.info.height, grid.info.width)
         check_distance = 20
         mini_step = 1
         closest_cell = (None, None)
         closest = float('inf')
+        # Converting x, y to cell indices
         column = int((x - grid.info.origin.position.x) / grid.info.resolution)
         row = int((y -grid.info.origin.position.y) / grid.info.resolution)
+        # Checking in a box around robot
         for i in np.arange(-check_distance, check_distance, mini_step):
             for k in np.arange(-check_distance, check_distance, mini_step):
                 r = row + i
                 c = column + k
                 if (r < 0 or r >= grid.info.height or c < 0 or c >= grid.info.width):
                     continue
+                # If occupied
                 if grid_array[r][c] == 100:
                     dist = np.sqrt(i**2 + k**2)
+                    # If closest obstacle
                     if dist < closest:
                         closest = dist
                         closest_cell = (r, c)
         if closest_cell[0] == None:
             return None, None
+        # Convert to robot frame and return
         occ_x = grid.info.origin.position.x + closest_cell[1] * grid.info.resolution
         occ_y = grid.info.origin.position.y + closest_cell[0] * grid.info.resolution
         return occ_x, occ_y
 
+    # Callback for tb1 odom
     def odom_callback1(self, msg):
         self.x1 = msg.pose.pose.position.x
         self.y1 = msg.pose.pose.position.y
@@ -248,6 +283,7 @@ class PathMPC(Node):
             1.0 - 2.0 * (q.y * q.y + q.z * q.z)
         )
 
+    # Callback for tb2 odom
     def odom_callback2(self, msg):
         self.x2 = msg.pose.pose.position.x
         self.y2 = msg.pose.pose.position.y
@@ -258,32 +294,41 @@ class PathMPC(Node):
             1.0 - 2.0 * (q.y * q.y + q.z * q.z)
         )
 
+    # Turn of if received rivstart
     def turn_off_callback(self, msg):
         if msg.data:
             self.turn_off = True
 
+    # Callback for goal path 1
     def path_callback1(self, msg):
         self.path_header1=msg.header.frame_id
         self.path1=[]
         for point in msg.poses:
             self.path1.append((point.pose.position.x, point.pose.position.y))
 
+    # Callback for goal path 2
     def path_callback2(self, msg):
         self.path_header2=msg.header.frame_id
         self.path2=[]
         for point in msg.poses:
             self.path2.append((point.pose.position.x, point.pose.position.y))
 
+    # Callback to get latest map
     def map_callback(self, msg):
         self.latest_map = msg
 
+    # Runs every 0.1 s. Executes the code
     def timer_callback(self):
+        # Stops publishing cmd_vel if rivstart has been sent
         if self.turn_off:
             return
+        # Set to true if len(path) == 0, meaning that the bot has found its goal (plank)
         tb3_1_stop = False
         tb3_2_stop = False
         if len(self.path1) == 0:
+            # If bot has found plank, keep constraint for other robot constant at this pose
             self.pred1 = np.tile([self.x1, self.y1], (self.N + 1, 1))
+            # Publish 0 velocities
             new_cmd = TwistStamped()
             new_cmd.twist.linear.x = 0.0
             new_cmd.twist.angular.z = 0.0
@@ -291,41 +336,48 @@ class PathMPC(Node):
             tb3_1_stop = True
             self.tb1_stopped = True
         if len(self.path2) == 0:
+            # If bot has found plank, keep constraint for other robot constant at this pose
             self.pred2 = np.tile([self.x2, self.y2], (self.N + 1, 1))
+            # Publish 0 velocities
             new_cmd = TwistStamped()
             new_cmd.twist.linear.x = 0.0
             new_cmd.twist.angular.z = 0.0
             self.cmd_vel_publisher2.publish(new_cmd)
             tb3_2_stop = True
             self.tb2_stopped = True
-        if self.turn_off:
-            return None
-
+        # only if it hasn't found goal
         if not tb3_1_stop:
             p0 = np.array([self.x1, self.y1, self.yaw1])
             self.mpc1.x0 = p0
             p = p0.copy()
 
+            # Calculate prediction
             u = self.mpc1.make_step(p)
             x_pred = self.mpc1.data.prediction(('_x', 'x')).flatten()
             y_pred = self.mpc1.data.prediction(('_x', 'y')).flatten()
+            # Save prediction for other rbot constraint
             self.pred1 = np.column_stack((x_pred, y_pred))
 
+            # Publish velocity command
             new_cmd = TwistStamped()
             new_cmd.twist.linear.x = u[0][0]
             new_cmd.twist.angular.z = u[1][0]
             self.cmd_vel_publisher1.publish(new_cmd)
 
+        # Only if it hasn't found goal
         if not tb3_2_stop:
             p0 = np.array([self.x2, self.y2, self.yaw2])
             self.mpc2.x0 = p0
             p = p0.copy()
 
+            # Calculate prediction
             u = self.mpc2.make_step(p)
             x_pred = self.mpc2.data.prediction(('_x', 'x')).flatten()
             y_pred = self.mpc2.data.prediction(('_x', 'y')).flatten()
+            # Save prediction for other rbot constraint
             self.pred2 = np.column_stack((x_pred, y_pred))
 
+            # Publish velocity command
             new_cmd = TwistStamped()
             new_cmd.twist.linear.x = u[0][0]
             new_cmd.twist.angular.z = u[1][0]
