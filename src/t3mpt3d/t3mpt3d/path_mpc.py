@@ -335,6 +335,8 @@ class PathMPC(Node):
             self.cmd_vel_publisher1.publish(new_cmd)
             tb3_1_stop = True
             self.tb1_stopped = True
+        else:
+            self.tb1_stopped = False
         if len(self.path2) == 0:
             # If bot has found plank, keep constraint for other robot constant at this pose
             self.pred2 = np.tile([self.x2, self.y2], (self.N + 1, 1))
@@ -345,6 +347,8 @@ class PathMPC(Node):
             self.cmd_vel_publisher2.publish(new_cmd)
             tb3_2_stop = True
             self.tb2_stopped = True
+        else:
+            self.tb2_stopped = False
         # only if it hasn't found goal
         if not tb3_1_stop:
             p0 = np.array([self.x1, self.y1, self.yaw1])
