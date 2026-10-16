@@ -271,9 +271,10 @@ class PathPlannerNode(Node):
 
 
             r = self.r
-
+            self.get_logger().info(f"THE TREASSURE CAN BE REACHED VIA {len(self.leaves)} SALTY SEAS")
             for leaf in self.leaves:
                 path = leaf.get_path_to_root()
+                path = self.maximize_clearance(path, map_msg)
                 poses = []
                 for pt in path:
                     poses.append([pt[0],pt[1],thp])
@@ -306,16 +307,6 @@ class PathPlannerNode(Node):
 
         best_path, best_pose_path = self.evaluate_valid_paths(valid_paths, valid_pose_paths)
 
-        # Maximize hallway clearance
-        best_path = self.maximize_clearance(best_path, map_msg)
-
-        # Reconstruct pose path with updated positions and retained yaws
-        updated_pose_path = []
-        for i, pt in enumerate(best_path):
-            yaw = best_pose_path[i][2]
-            updated_pose_path.append([pt[0], pt[1], yaw])
-
-        best_pose_path = updated_pose_path
         self.pose_path = best_pose_path
         path = best_path
         self.publish_plank_path()
@@ -338,7 +329,7 @@ class PathPlannerNode(Node):
             path_pt_ls.append(path_pt)
         path_msg.poses = path_pt_ls
         self.path_pub.publish(path_msg)
-        self.get_logger().info("I CAN SMELL THE RUM OOOZIN")
+        self.get_logger().info("OOH I CAN SMELL THE RUM OOOZIN")
 
         return path
 
@@ -576,8 +567,8 @@ class PathPlannerNode(Node):
         map_msg.data = map_grid.ravel().tolist()
         return map_msg
 
-    def maximize_clearance(self, path: List[np.ndarray], map_msg: OccupancyGrid, max_iterations: int = 15, step_size: float = 0.05) -> List[np.ndarray]:
-        """Optimizes path waypoints to maximize clearance from obstacles using EDT gradient ascent."""
+    def maximize_clearance(self, path, map_msg, max_iterations: int = 15, step_size: float = 0.05):
+
         map_grid = np.array(map_msg.data, dtype=np.int16).reshape(
             (map_msg.info.height, map_msg.info.width)
         )
