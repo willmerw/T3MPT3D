@@ -87,7 +87,7 @@ class PathPlannerNode(Node):
         self.obs_fid = 0.01 #obstacle fidelity
         self.plank_twist = np.pi/10
         self.goal_radius = 0.2
-        self.map_inflation = 1
+        self.map_inflation = 3
 
         x = self.start[0]
         y = self.start[1]
@@ -153,7 +153,7 @@ class PathPlannerNode(Node):
         pt1 = np.array([p1x,p1y])
         pt2 = np.array([p2x,p2y])
         d = pt2-pt1
-        self.r = np.linalg.norm(d)/2
+        self.r = np.linalg.norm(d)/2 + 0.2
         thp = np.arctan2(d[1],d[0])
         pt = pt1 + d/2
         x = pt[0]
@@ -277,6 +277,7 @@ class PathPlannerNode(Node):
                 path = self.maximize_clearance(path, map_msg)
                 path = self.cut_trim(path)
                 poses = []
+                """
                 for i in range(1,len(path)):
                     prev_pt = np.array(path[i-1])
                     pt = np.array(path[i])
@@ -309,7 +310,7 @@ class PathPlannerNode(Node):
                     valid_paths.append(path)
                 if len(valid_paths) < 1:
                     self.get_logger().info("YER HOLDIN THE MAP UPSIDE DOWN YE SCURVY DOG!")
-                """
+
                 self.get_logger().info(f"NODES IN TREE: {len(self.tree_pts)}")
         print(f"DONE, Found {len(valid_paths)} valid paths")
 
@@ -344,7 +345,7 @@ class PathPlannerNode(Node):
         return path
 
 
-    def cut_trim(self,path, dist=0.1):
+    def cut_trim(self,path, dist=0.4):
         path = np.array(path)
         if len(path) < 2:
             return path

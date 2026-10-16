@@ -73,9 +73,11 @@ class PlankMPC(Node):
         )
         self.sync.registerCallback(self.odom_callback)
 
-        self.p1 = [0.0, 0.0, 0.0]
-        self.p2 = [0.0, 0.0, 0.0]
+        self.p1 = [0.0, 0.0, None]
+        self.p2 = [0.0, 0.0, None]
         self.prev_thp = None  # Track previous plank angle for continuity
+        self.prev_th1 = None
+        self.prev_th2 = None
 
         self.x_desired = 0.0
         self.y_desired = 0.0
@@ -138,7 +140,7 @@ class PlankMPC(Node):
             pt1 = np.array([pt1x,pt1y])
             pt2 = np.array([pt2x,pt2y])
             d = pt2-pt1
-            self.r = np.linalg.norm(d)/2
+            self.r = np.linalg.norm(d)/2 + 0.2
 
     def odom_callback(self, odom1_msg: Odometry, odom2_msg: Odometry):
         if not self.start:
@@ -146,6 +148,7 @@ class PlankMPC(Node):
 
         if not self.path_received:
             return
+
         self.p1[0] = odom1_msg.pose.pose.position.x
         self.p1[1] = odom1_msg.pose.pose.position.y
         q1 = odom1_msg.pose.pose.orientation
@@ -165,24 +168,38 @@ class PlankMPC(Node):
         xy1 = np.array([self.p1[0], self.p1[1]])
         xy2 = np.array([self.p2[0], self.p2[1]])
         d = xy2 - xy1
-        pxy = xy1 + d/2
-        th1 = self.p1[2]
-        th2 = self.p2[2]
+        pxy = xy1 + d / 2.0
 
+        th1_raw = self.p1[2]
+        th2_raw = self.p2[2]
         thp_raw = np.arctan2(d[1], d[0])
+
+        # Handle continuity initialization and wrapping
+        if self.prev_th1 is None:
+            th1 = th1_raw
+        else:
+            diff1 = th1_raw - self.prev_th1
+            th1 = self.prev_th1 + np.arctan2(np.sin(diff1), np.cos(diff1))
+
+        if self.prev_th2 is None:
+            th2 = th2_raw
+        else:
+            diff2 = th2_raw - self.prev_th2
+            th2 = self.prev_th2 + np.arctan2(np.sin(diff2), np.cos(diff2))
 
         if self.prev_thp is None:
             thp = thp_raw
         else:
-            # Wrap the difference to [-pi, pi] to maintain continuity
-            diff = thp_raw - self.prev_thp
-            thp = self.prev_thp + np.arctan2(np.sin(diff), np.cos(diff))
+            diffp = thp_raw - self.prev_thp
+            thp = self.prev_thp + np.arctan2(np.sin(diffp), np.cos(diffp))
 
+        self.prev_th1 = th1
+        self.prev_th2 = th2
         self.prev_thp = thp
         px, py = pxy
 
-        self.plank = px, py, th1, th2, thp
-        marker = self.plank_marker(px,py,thp,1337)
+        self.plank = (px, py, th1, th2, thp)
+        marker = self.plank_marker(px, py, thp, 1337)
         self.plank_vis_pub.publish(marker)
         self.publish_plank_odom()
 
@@ -204,7 +221,7 @@ class PlankMPC(Node):
         self.get_logger().info(f"PLANK: {self.plank} DESIRED: {self.path[self.path_i]}")
         d = np.linalg.norm(np.array([self.x_desired, self.y_desired]) - p0[:2])
 
-        if d < 0.05:
+        if d < 0.1:
             self.path_i += 1
             if self.path_i >= len(self.path):
                 stop_cmd = TwistStamped()
@@ -412,9 +429,11 @@ class PlankMPC(Node):
                 'ipopt.sb': 'yes',        # no IPOPT banner
                 'print_time': 0,          # no CasADi timing summary
                 }
-
+        pos_error = (model.x['x'] - model.tvp['x_goal'])**2 + (model.x['y'] - model.tvp['y_goal'])**2
+        yaw_error = 1.0 - ca.cos(model.x['thp'] - model.tvp['yaw_goal'])
+        lterm = pos_error + 1.0 * yaw_error
         mterm = (model.x['x'] - model.tvp['x_goal'])**2 + (model.x['y'] - model.tvp['y_goal'])**2
-        lterm = (model.x['x'] - model.tvp['x_goal'])**2 + (model.x['y'] - model.tvp['y_goal'])**2 + (model.x['thp'] - model.tvp['yaw_goal'])**2
+        #lterm =  + (model.x['thp'] - model.tvp['yaw_goal'])**2
         mpc.set_objective(mterm=mterm, lterm=lterm)
         mpc.set_rterm(v1=1e-2, v2=1e-2, vth1=1e-2,vth2=1e-2)
 
@@ -467,25 +486,29 @@ class PlankMPC(Node):
             'obs_p1_1',
             0.4 ** 2 - ((x_p1 - model.tvp['obs_x1']) ** 2 + (y_p1 - model.tvp['obs_y1']) ** 2),
             ub=0.0,
-            soft_constraint=False
+            soft_constraint=True,
+            penalty_term_cons=1e4
         )
         mpc.set_nl_cons(
             'obs_p1_2',
             0.4 ** 2 - ((x_p1 - model.tvp['obs_x2']) ** 2 + (y_p1 - model.tvp['obs_y2']) ** 2),
             ub=0.0,
-            soft_constraint=False
+            soft_constraint=True,
+            penalty_term_cons=1e4
         )
         mpc.set_nl_cons(
             'obs_p2_1',
             0.4 ** 2 - ((x_p2 - model.tvp['obs_x1']) ** 2 + (y_p2 - model.tvp['obs_y1']) ** 2),
             ub=0.0,
-            soft_constraint=False
+            soft_constraint=True,
+            penalty_term_cons=1e4
         )
         mpc.set_nl_cons(
             'obs_p2_2',
             0.4 ** 2 - ((x_p2 - model.tvp['obs_x2']) ** 2 + (y_p2 - model.tvp['obs_y2']) ** 2),
             ub=0.0,
-            soft_constraint=False
+            soft_constraint=True,
+            penalty_term_cons=1e4
         )
 
         tvp_template = mpc.get_tvp_template()
@@ -522,7 +545,7 @@ class PlankMPC(Node):
         y2 = y - r * np.sin(thp)
 
         def find_closest_to(pt_x, pt_y):
-            check_distance = 15
+            check_distance = 5
             mini_step = 1
             column = int((pt_x - grid.info.origin.position.x) / grid.info.resolution)
             row = int((pt_y - grid.info.origin.position.y) / grid.info.resolution)
