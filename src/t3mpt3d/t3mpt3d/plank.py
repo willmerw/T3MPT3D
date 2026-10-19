@@ -7,7 +7,7 @@ from rclpy.node import Node
 from std_msgs.msg import String, Bool
 from geometry_msgs.msg import TwistStamped,PoseStamped,PolygonStamped
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
-from nav_msgs.msg import Odometry, Path
+from nav_msgs.msg import Odometry, Path, OccupancyGrid
 from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Point
 import numpy as np
@@ -50,7 +50,7 @@ class PlankMPC(Node):
 
         # FLAGS
         self.path_received = False
-        self.map_sub = self.create_subscription(Path, '/path', self._on_path, 10)
+        self.path_sub = self.create_subscription(Path, '/path', self._on_path, 10)
 
         self.plank_received = False
         self.plank_sub = self.create_subscription(PolygonStamped, '/plank', self._on_plank, 10)
@@ -60,7 +60,7 @@ class PlankMPC(Node):
         self.start_sub = self.create_subscription(Bool, '/rivstart',self._on_start,10)
 
         self.latest_map = None
-        self.path_sub = self.create_subscription(Path, '/map', self._on_map, 10)
+        self.map_sub = self.create_subscription(OccupancyGrid, '/map', self._on_map, 10)
 
         self.odom1_sub = message_filters.Subscriber(
             self, Odometry, tb1_odom_world,10
@@ -95,19 +95,20 @@ class PlankMPC(Node):
         self.path = [] #x,y,yaw
         self.path_i=0
         ts = 0.1
-        N = 40 # horizon
+        self.N = 20 # horizon
 
-        self.mpc = self.definePlankMPC(self.model, ts, N)
+        self.mpc = self.definePlankMPC(self.model, ts, self.N)
 
         tvp_template = self.mpc.get_tvp_template()
         def tvp_fun(t_now):
-            for k in range(N + 1):
+            for k in range(self.N + 1):
                 tvp_template['_tvp', k, 'x_goal'] = self.x_desired
                 tvp_template['_tvp', k, 'y_goal'] = self.y_desired
                 tvp_template['_tvp', k, 'yaw_goal'] = self.yaw_desired
             return tvp_template
 
         self.mpc.set_tvp_fun(tvp_fun)
+
         self.mpc.setup()
     def _on_map(self,map_msg):
         self.latest_map = map_msg
@@ -214,11 +215,7 @@ class PlankMPC(Node):
             self.r2_pub.publish(stop_cmd)
             return
 
-
-
         self.x_desired, self.y_desired, self.yaw_desired = self.path[self.path_i]
-
-        self.get_logger().info(f"PLANK: {self.plank} DESIRED: {self.path[self.path_i]}")
         d = np.linalg.norm(np.array([self.x_desired, self.y_desired]) - p0[:2])
 
         if d < 0.1:
@@ -231,7 +228,10 @@ class PlankMPC(Node):
 
             self.x_desired, self.y_desired, self.yaw_desired = self.path[self.path_i]
 
-        self.publish_marker(self.x_desired, self.y_desired)
+        #self.get_logger().info(f"P1: {self.p1}")
+        #self.get_logger().info(f"P2: {self.p2}")
+        #self.get_logger().info(f"PLANK: {self.plank} DESIRED: {self.path[self.path_i]}")
+        #self.publish_marker(self.x_desired, self.y_desired)
 
         self.mpc.x0 = p0
         self.mpc.set_initial_guess()
@@ -273,10 +273,6 @@ class PlankMPC(Node):
         r1_cmd = TwistStamped()
         r2_cmd = TwistStamped()
 
-        # v1 = u[0][0]
-        # v2 = u[1][0]
-        # vth1 = u[2][0]
-        # vth2 = u[3][0]
         v1   = float(u[0])
         v2   = float(u[1])
         vth1 = float(u[2])
@@ -310,12 +306,12 @@ class PlankMPC(Node):
         marker.scale.x = 0.05
 
         # Color and Alpha (opacity) - Alpha must be > 0 to be visible
-        marker.color.r = 1.0
+        marker.color.r = 0.0
         marker.color.g = 0.0
-        marker.color.b = 0.0
+        marker.color.b = 1.0
         marker.color.a = 1.0
 
-        shift = np.array([np.cos(thp),np.sin(thp)]) * self.r
+        shift = np.array([np.cos(thp),np.sin(thp)]) * (self.r-0.2)
         p1 = np.array([x,y]) + shift
         p2 = np.array([x,y]) - shift
         pp1 = Point(x=p1[0], y=p1[1], z=0.0)
@@ -431,17 +427,11 @@ class PlankMPC(Node):
                 }
         pos_error = (model.x['x'] - model.tvp['x_goal'])**2 + (model.x['y'] - model.tvp['y_goal'])**2
         yaw_error = 1.0 - ca.cos(model.x['thp'] - model.tvp['yaw_goal'])
-        lterm = pos_error + 1.0 * yaw_error
+        lterm = 100*pos_error + 1.0 * yaw_error
         mterm = (model.x['x'] - model.tvp['x_goal'])**2 + (model.x['y'] - model.tvp['y_goal'])**2
         #lterm =  + (model.x['thp'] - model.tvp['yaw_goal'])**2
         mpc.set_objective(mterm=mterm, lterm=lterm)
         mpc.set_rterm(v1=1e-2, v2=1e-2, vth1=1e-2,vth2=1e-2)
-
-        # State Bounds
-        #mpc.bounds['lower','_x','x'] = -10.0
-        #mpc.bounds['upper','_x','x'] =  10.0
-        #mpc.bounds['lower','_x','y'] = -10.0
-        #mpc.bounds['upper','_x','y'] =  10.0
 
         # Input Constraints
         mpc.bounds['lower','_u','v1'] = 0.0
@@ -474,106 +464,36 @@ class PlankMPC(Node):
             soft_constraint=True,
             penalty_term_cons=1e2
         )
-        r = self.r
-        # Endpoint definitions
-        x_p1 = model.x['x'] + r * ca.cos(model.x['thp'])
-        y_p1 = model.x['y'] + r * ca.sin(model.x['thp'])
-        x_p2 = model.x['x'] - r * ca.cos(model.x['thp'])
-        y_p2 = model.x['y'] - r * ca.sin(model.x['thp'])
-
-        # 4 Constraints (2 endpoints vs 2 obstacles)
-        mpc.set_nl_cons(
-            'obs_p1_1',
-            0.4 ** 2 - ((x_p1 - model.tvp['obs_x1']) ** 2 + (y_p1 - model.tvp['obs_y1']) ** 2),
-            ub=0.0,
-            soft_constraint=True,
-            penalty_term_cons=1e4
-        )
-        mpc.set_nl_cons(
-            'obs_p1_2',
-            0.4 ** 2 - ((x_p1 - model.tvp['obs_x2']) ** 2 + (y_p1 - model.tvp['obs_y2']) ** 2),
-            ub=0.0,
-            soft_constraint=True,
-            penalty_term_cons=1e4
-        )
-        mpc.set_nl_cons(
-            'obs_p2_1',
-            0.4 ** 2 - ((x_p2 - model.tvp['obs_x1']) ** 2 + (y_p2 - model.tvp['obs_y1']) ** 2),
-            ub=0.0,
-            soft_constraint=True,
-            penalty_term_cons=1e4
-        )
-        mpc.set_nl_cons(
-            'obs_p2_2',
-            0.4 ** 2 - ((x_p2 - model.tvp['obs_x2']) ** 2 + (y_p2 - model.tvp['obs_y2']) ** 2),
-            ub=0.0,
-            soft_constraint=True,
-            penalty_term_cons=1e4
-        )
-
+        """
         tvp_template = mpc.get_tvp_template()
-        def tvp_fun(t_now):
-            # Evaluate using current robot position estimation
-            x_val = mpc.x0['x']
-            y_val = mpc.x0['y']
-            thp_val = mpc.x0['thp']
 
-            obs_x1, obs_y1, obs_x2, obs_y2 = self.closest_occupied(x_val, y_val,thp_val, self.r, self.latest_map)
+        def tvp_fun(t_now):
+            # Don't use whole path every time
+            start_idx = self.closest_path_index()
 
             for k in range(N + 1):
-                tvp_template['_tvp', k, 'obs_x1'] = obs_x1 if obs_x1 is not None else 0.0
-                tvp_template['_tvp', k, 'obs_y1'] = obs_y1 if obs_y1 is not None else 0.0
-                tvp_template['_tvp', k, 'obs_x2'] = obs_x2 if obs_x2 is not None else 0.0
-                tvp_template['_tvp', k, 'obs_y2'] = obs_y2 if obs_y2 is not None else 0.0
+                # Updating goal
+                if len(self.path) > 0:
+                    idx = min(start_idx + k, len(self.path) - 1)
+                    tvp_template['_tvp', k, 'x_goal'] = self.path[idx][0]
+                    tvp_template['_tvp', k, 'y_goal'] = self.path[idx][1]
+                    tvp_template['_tvp', k, 'yaw_goal'] = self.path[idx][2]
 
             return tvp_template
 
         mpc.set_tvp_fun(tvp_fun)
-
-
+        """
         return mpc
-    def closest_occupied(self, x, y, thp, r, grid):
-        if grid is None:
-            return None, None, None, None
-
-        grid_array = np.array(grid.data).reshape(grid.info.height, grid.info.width)
-
-        # 1. Calculate the coordinates of both plank endpoints
-        x1 = x + r * np.cos(thp)
-        y1 = y + r * np.sin(thp)
-        x2 = x - r * np.cos(thp)
-        y2 = y - r * np.sin(thp)
-
-        def find_closest_to(pt_x, pt_y):
-            check_distance = 5
-            mini_step = 1
-            column = int((pt_x - grid.info.origin.position.x) / grid.info.resolution)
-            row = int((pt_y - grid.info.origin.position.y) / grid.info.resolution)
-
-            closest_cell = (None, None)
-            closest = float('inf')
-
-            for i in np.arange(-check_distance, check_distance + 1, mini_step):
-                for k in np.arange(-check_distance, check_distance + 1, mini_step):
-                    r_idx = row + int(i)
-                    c_idx = column + int(k)
-                    if (r_idx < 0 or r_idx >= grid.info.height or c_idx < 0 or c_idx >= grid.info.width):
-                        continue
-                    if grid_array[r_idx][c_idx] == 100:
-                        occ_x = grid.info.origin.position.x + c_idx * grid.info.resolution
-                        occ_y = grid.info.origin.position.y + r_idx * grid.info.resolution
-                        dist = np.hypot(occ_x - pt_x, occ_y - pt_y)
-                        if dist < closest:
-                            closest = dist
-                            closest_cell = (occ_x, occ_y)
-
-            return closest_cell[0], closest_cell[1]
-
-        # Find closest obstacle to Endpoint 1 and Endpoint 2 respectively
-        obs_x1, obs_y1 = find_closest_to(x1, y1)
-        obs_x2, obs_y2 = find_closest_to(x2, y2)
-
-        return obs_x1, obs_y1, obs_x2, obs_y2
+    # Finding closest path index
+    def closest_path_index(self):
+        x,y,th1,th2,thp = self.plank
+        if not self.path:
+            return 0
+        distances = [
+            (px - x)**2 + (py - y)**2
+            for px, py,_ in self.path
+        ]
+        return int(np.argmin(distances))
 def main(): # Main Function
     rclpy.init()
     node = PlankMPC()

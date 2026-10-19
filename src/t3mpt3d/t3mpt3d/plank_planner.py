@@ -177,16 +177,10 @@ class PathPlannerNode(Node):
         if not self.received_start:
             return
         if not self.map_received:
-            fail = True
-            while fail:
-                self.map_received = True
-                self.map = map_msg
-                self.publish_goal(self.goal)
-                fail = self.plan_path(map_msg)
-                if fail == True:
-                    continue
-                else:
-                    fail = False
+            self.map_received = True
+            self.map = map_msg
+            self.publish_goal(self.goal)
+            self.plan_path(map_msg)
 
 
 
@@ -345,7 +339,7 @@ class PathPlannerNode(Node):
         return path
 
 
-    def cut_trim(self,path, dist=0.4):
+    def cut_trim(self,path, dist=0.6):
         path = np.array(path)
         if len(path) < 2:
             return path
@@ -425,7 +419,7 @@ class PathPlannerNode(Node):
             marker.color.b = 0.0
             marker.color.a = 1.0
 
-            shift = np.array([np.cos(thp),np.sin(thp)]) * self.r
+            shift = np.array([np.cos(thp),np.sin(thp)]) * (self.r-0.2)
             p1 = np.array([x,y]) + shift
             p2 = np.array([x,y]) - shift
             pp1 = Point(x=p1[0], y=p1[1], z=0.0)
