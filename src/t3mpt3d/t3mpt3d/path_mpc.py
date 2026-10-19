@@ -21,6 +21,10 @@ class PathMPC(Node):
         self.declare_parameter('rivstart', '/rivstart')
         self.declare_parameter('tb1_path', '/turtlebot1/path')
         self.declare_parameter('tb2_path', '/turtlebot2/path')
+        self.declare_parameter('tb1_mpc_traj', '/turtlebot1/mpc_traj')
+        self.declare_parameter('tb2_mpc_traj', '/turtlebot2/mpc_traj')
+        self.declare_parameter('tb1_traj', '/turtlebot1/traj')
+        self.declare_parameter('tb2_traj', '/turtlebot2/traj')
 
         tb1_cmd_vel:str = self.get_parameter('tb1_cmd_vel').get_parameter_value().string_value
         tb2_cmd_vel:str = self.get_parameter('tb2_cmd_vel').get_parameter_value().string_value
@@ -29,10 +33,19 @@ class PathMPC(Node):
         rivstart:str = self.get_parameter('rivstart').get_parameter_value().string_value
         tb1_path:str = self.get_parameter('tb1_path').get_parameter_value().string_value
         tb2_path:str = self.get_parameter('tb2_path').get_parameter_value().string_value
+        tb1_mpc_traj:str = self.get_parameter('tb1_mpc_traj').get_parameter_value().string_value
+        tb2_mpc_traj:str = self.get_parameter('tb2_mpc_traj').get_parameter_value().string_value
+        tb1_traj:str = self.get_parameter('tb1_traj').get_parameter_value().string_value
+        tb2_traj:str = self.get_parameter('tb2_traj').get_parameter_value().string_value
+
 
         # Publishes one velocity command per robot
         self.cmd_vel_publisher1 = self.create_publisher(TwistStamped, tb1_cmd_vel, 10)
         self.cmd_vel_publisher2 = self.create_publisher(TwistStamped, tb2_cmd_vel, 10)
+        self.mpc_traj_publisher1 = self.create_publisher(Path, tb1_mpc_traj, 10)
+        self.traj_publisher1 = self.create_publisher(Path, tb1_traj, 10)
+        self.mpc_traj_publisher2 = self.create_publisher(Path, tb2_mpc_traj, 10)
+        self.traj_publisher2 = self.create_publisher(Path, tb2_traj, 10)
 
         # Runs every 0.1 seconds, executes the code
         self.timer = self.create_timer(0.1, self.timer_callback)
@@ -61,6 +74,10 @@ class PathMPC(Node):
         self.path_header1=""
         self.path2 = []
         self.path_header2=""
+
+        # Store travelled paths
+        self.traj1 = []
+        self.traj2 = []
 
         self.latest_map = None
 
@@ -355,11 +372,37 @@ class PathMPC(Node):
             self.mpc1.x0 = p0
             p = p0.copy()
 
+            # For publishing mpc trajectory
+            xp, yp = p0[:2].copy()
+            self.traj.append([xp, yp])
+            traj_msg = Path()
+            traj_msg.header.frame_id = 'world'
+            for x,y in self.traj1:
+                pose = PoseStamped()
+                pose.header = traj_msg.header
+                pose.pose.position.x = float(x)
+                pose.pose.position.y = float(y)
+                pose.pose.position.z = 0.0
+                traj_msg.poses.append(pose)
+
+            self.traj_publisher1.publish(traj_msg)
+
             # Calculate prediction
             u = self.mpc1.make_step(p)
             x_pred = self.mpc1.data.prediction(('_x', 'x')).flatten()
             y_pred = self.mpc1.data.prediction(('_x', 'y')).flatten()
-            # Save prediction for other rbot constraint
+
+            path_msg = Path()
+            path_msg.header.stamp = self.get_clock().now().to_msg()
+            path_msg.header.frame_id = 'world'
+            for x, y in zip(x_pred, y_pred):
+                pose = PoseStamped()
+                pose.header = path_msg.header
+                pose.pose.position.x = float(x)
+                pose.pose.position.y = float(y)
+                path_msg.poses.append(pose)
+            self.mpc_traj_publisher1.publish(path_msg)
+            # Save prediction for other bot constraint
             self.pred1 = np.column_stack((x_pred, y_pred))
 
             # Publish velocity command
@@ -374,11 +417,38 @@ class PathMPC(Node):
             self.mpc2.x0 = p0
             p = p0.copy()
 
+            # For publishing mpc trajectory
+            xp, yp = p0[:2].copy()
+            self.traj.append([xp, yp])
+            traj_msg = Path()
+            traj_msg.header.frame_id = 'world'
+            for x,y in self.traj2:
+                pose = PoseStamped()
+                pose.header = traj_msg.header
+                pose.pose.position.x = float(x)
+                pose.pose.position.y = float(y)
+                pose.pose.position.z = 0.0
+                traj_msg.poses.append(pose)
+
+            self.traj_publisher2.publish(traj_msg)
+
             # Calculate prediction
             u = self.mpc2.make_step(p)
             x_pred = self.mpc2.data.prediction(('_x', 'x')).flatten()
             y_pred = self.mpc2.data.prediction(('_x', 'y')).flatten()
-            # Save prediction for other rbot constraint
+
+            # For publishing mpc trajectory
+            path_msg = Path()
+            path_msg.header.stamp = self.get_clock().now().to_msg()
+            path_msg.header.frame_id = 'world'
+            for x, y in zip(x_pred, y_pred):
+                pose = PoseStamped()
+                pose.header = path_msg.header
+                pose.pose.position.x = float(x)
+                pose.pose.position.y = float(y)
+                path_msg.poses.append(pose)
+            self.mpc_traj_publisher2.publish(path_msg)
+            # Save prediction for other bot constraint
             self.pred2 = np.column_stack((x_pred, y_pred))
 
             # Publish velocity command
