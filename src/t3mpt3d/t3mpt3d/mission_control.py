@@ -57,6 +57,7 @@ class MissionControlNode(Node):
         self.plank_reached_subscriptions = {}
         self.reached_subscriptions = {}
         self.goal = [0,0,0]
+        self.low = False
         self.found_plank = False
         self.reached =[]
         self.started = False
@@ -112,7 +113,10 @@ class MissionControlNode(Node):
 
 
     def low_fronteirs_callback(self,msg):
-        if msg.data is True and self.found_plank is True:
+        if msg.data is True:
+            self.get_logger().info(f"We have searched the whole Island! Where be the plank?")
+            self.low = True
+        if self.low is True and self.found_plank is True:
             self.get_logger().info("This was the last seaweed, time to walk the plank")
             self.go_to_plank_pub()
 
@@ -120,6 +124,9 @@ class MissionControlNode(Node):
         if msg.data is True:
             self.get_logger().info("No Time to walk the plank")
             self.found_plank = True
+        if self.low is True and self.found_plank is True:
+            self.get_logger().info("This was the last seaweed, time to walk the plank")
+            self.go_to_plank_pub()
 
 
     def plank_pos_pub(self):

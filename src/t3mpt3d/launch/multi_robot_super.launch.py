@@ -17,7 +17,7 @@ def generate_launch_description():
     t3mpt3d_pkg = get_package_share_directory('t3mpt3d')
 
     # Path to the Gazebo multi-launch file
-    gazebo_multi_launch = os.path.join(gazebo_pkg, 'launch', 'multi_robot_world.launch.py')
+    gazebo_multi_launch = os.path.join(gazebo_pkg, 'launch', 'maze_world.launch.py')
 
     # Path to the SLAM/Nav launch file
     slam_nav_launch = os.path.join(t3mpt3d_pkg, 'launch', 'plank_retrieval.launch.py')
@@ -69,8 +69,8 @@ def generate_launch_description():
         name='mission_control',
         output='screen',
         parameters=[{'use_sim_time': True,
-                        "plank_pos1": [2.5, -0.5],
-                        "plank_pos2": [2.5,0.5],
+                        "plank_pos1": [2.5, 4.8],  # maze_world: Gazebo (0.1, 2.4)
+                        "plank_pos2": [3.5, 4.8],  # maze_world: Gazebo (1.1, 2.4)
                      }] # Good practice if relying on Gazebo time
     )
 
