@@ -95,7 +95,7 @@ class PlankMPC(Node):
         self.path = [] #x,y,yaw
         self.path_i=0
         ts = 0.1
-        self.N = 20 # horizon
+        self.N = 40 # horizon
 
         self.mpc = self.definePlankMPC(self.model, ts, self.N)
 
@@ -427,7 +427,7 @@ class PlankMPC(Node):
                 }
         pos_error = (model.x['x'] - model.tvp['x_goal'])**2 + (model.x['y'] - model.tvp['y_goal'])**2
         yaw_error = 1.0 - ca.cos(model.x['thp'] - model.tvp['yaw_goal'])
-        lterm = 100*pos_error + 1.0 * yaw_error
+        lterm = pos_error + 1.0 * yaw_error
         mterm = (model.x['x'] - model.tvp['x_goal'])**2 + (model.x['y'] - model.tvp['y_goal'])**2
         #lterm =  + (model.x['thp'] - model.tvp['yaw_goal'])**2
         mpc.set_objective(mterm=mterm, lterm=lterm)
@@ -435,9 +435,9 @@ class PlankMPC(Node):
 
         # Input Constraints
         mpc.bounds['lower','_u','v1'] = 0.0
-        mpc.bounds['upper','_u','v1'] =  0.2
+        mpc.bounds['upper','_u','v1'] =  0.1
         mpc.bounds['lower','_u','v2'] = 0.0
-        mpc.bounds['upper','_u','v2'] =  0.2
+        mpc.bounds['upper','_u','v2'] =  0.1
         mpc.bounds['lower','_u','vth1'] = -0.5
         mpc.bounds['upper','_u','vth1'] =  0.5
         mpc.bounds['lower','_u','vth2'] = -0.5

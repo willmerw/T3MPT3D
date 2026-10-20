@@ -339,7 +339,7 @@ class PathPlannerNode(Node):
         return path
 
 
-    def cut_trim(self,path, dist=0.6):
+    def cut_trim(self,path, dist=0.3):
         path = np.array(path)
         if len(path) < 2:
             return path
