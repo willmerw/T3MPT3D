@@ -180,7 +180,7 @@ class PathMPC(Node):
         mpc.bounds['lower','_u','vt'] = -0.5 # -0.5
         mpc.bounds['upper','_u','vt'] =  0.5 # 0.5
 
-        # Distance to be kept between tbs 
+        # Distance to be kept between tbs
         safe_distance = 0.3
 
         # Dynamic constraint for the other robot
@@ -231,7 +231,7 @@ class PathMPC(Node):
                 tvp_template['_tvp', k, 'other_x'] = pred[k, 0]
                 tvp_template['_tvp', k, 'other_y'] = pred[k, 1]
 
-                # Keeping obstacle constraint constant along horizon 
+                # Keeping obstacle constraint constant along horizon
                 tvp_template['_tvp', k, 'obs_x'] = obs_x
                 tvp_template['_tvp', k, 'obs_y'] = obs_y
 
@@ -374,7 +374,7 @@ class PathMPC(Node):
 
             # For publishing mpc trajectory
             xp, yp = p0[:2].copy()
-            self.traj.append([xp, yp])
+            self.traj1.append([xp, yp])
             traj_msg = Path()
             traj_msg.header.frame_id = 'world'
             for x,y in self.traj1:
@@ -419,7 +419,7 @@ class PathMPC(Node):
 
             # For publishing mpc trajectory
             xp, yp = p0[:2].copy()
-            self.traj.append([xp, yp])
+            self.traj2.append([xp, yp])
             traj_msg = Path()
             traj_msg.header.frame_id = 'world'
             for x,y in self.traj2:
