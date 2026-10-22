@@ -344,18 +344,17 @@ class PathPlannerNode(Node):
         if len(path) < 2:
             return path
 
-        # 1. Calculate cumulative distances along the path
         diffs = np.diff(path, axis=0)
         segment_lengths = np.linalg.norm(diffs, axis=1)
         cumulative_dist = np.insert(np.cumsum(segment_lengths), 0, 0)
         total_length = cumulative_dist[-1]
 
-        # 2. Generate target distances at uniform intervals
+
         target_dists = np.arange(0, total_length, dist)
         if target_dists[-1] != total_length:
             target_dists = np.append(target_dists, total_length)
 
-        # 3. Interpolate new points
+
         new_path = np.zeros((len(target_dists), path.shape[1]))
         for i in range(path.shape[1]):
             new_path[:, i] = np.interp(target_dists, cumulative_dist, path[:, i])
@@ -604,13 +603,12 @@ class PathPlannerNode(Node):
             (map_msg.info.height, map_msg.info.width)
         )
 
-        # Create obstacle mask (obstacles >= 50 or unknown == -1)
+
         obstacle_mask = (map_grid >= 50) | (map_grid == -1)
 
-        # Compute distance transform in pixels
+
         dist_map_px = distance_transform_edt(~obstacle_mask)
 
-        # Scale distance map to meters using map resolution
         map_res = map_msg.info.resolution
         dist_map = dist_map_px * map_res
 
@@ -622,7 +620,6 @@ class PathPlannerNode(Node):
         for _ in range(max_iterations):
             new_path = []
             for i, pt in enumerate(optimized_path):
-                # Fix start and goal points
                 if i == 0 or i == len(optimized_path) - 1:
                     new_path.append(pt)
                     continue
@@ -635,7 +632,6 @@ class PathPlannerNode(Node):
                     new_path.append(pt)
                     continue
 
-                # Calculate numerical gradient of distance map (row=y, col=x)
                 dx = dist_map[iy, ix+1] - dist_map[iy, ix-1]
                 dy = dist_map[iy+1, ix] - dist_map[iy-1, ix]
                 grad = np.array([dx, dy])
@@ -643,7 +639,7 @@ class PathPlannerNode(Node):
 
                 if grad_norm > 1e-5:
                     candidate_pt = pt + step_size * (grad / grad_norm)
-                    # Verify the adjustment does not collide with obstacles
+
                     if not self.check_obs(optimized_path[i-1], candidate_pt, map_msg) and \
                        not self.check_obs(candidate_pt, optimized_path[i+1], map_msg):
                         new_path.append(candidate_pt)

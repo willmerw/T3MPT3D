@@ -407,7 +407,9 @@ class PlankMPC(Node):
         model.set_rhs('y', ((v1*ca.sin(th1)+v2*ca.sin(th2))/2))
         model.set_rhs('th1', vth1)
         model.set_rhs('th2', vth2)
-        model.set_rhs('thp', ((v2*ca.cos(th2)-v1*ca.cos(th1)) * -ca.sin(thp) + ((v2*ca.sin(th2) - v1*ca.sin(th1)) * ca.cos(thp)))/(2*r))
+        v1_perp = v1 * ca.sin(th1 - thp)
+        v2_perp = v2 * ca.sin(th2 - thp)
+        model.set_rhs('thp', (v2_perp - v1_perp) / (2 * r))
 
         return model
 
@@ -429,7 +431,7 @@ class PlankMPC(Node):
         yaw_error = 1.0 - ca.cos(model.x['thp'] - model.tvp['yaw_goal'])
         lterm = pos_error + 1.0 * yaw_error
         mterm = (model.x['x'] - model.tvp['x_goal'])**2 + (model.x['y'] - model.tvp['y_goal'])**2
-        #lterm =  + (model.x['thp'] - model.tvp['yaw_goal'])**2
+        lterm = (model.x['x'] - model.tvp['x_goal'])**2 + (model.x['thp'] - model.tvp['yaw_goal'])**2
         mpc.set_objective(mterm=mterm, lterm=lterm)
         mpc.set_rterm(v1=1e-2, v2=1e-2, vth1=1e-2,vth2=1e-2)
 
