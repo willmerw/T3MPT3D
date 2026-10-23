@@ -389,6 +389,10 @@ class PathMPC(Node):
 
             # Calculate prediction
             u = self.mpc1.make_step(p)
+            self.get_logger().info(
+                f"Robot 1: position=({self.x1:.2f}, {self.y1:.2f}), "
+                f"velocity=({u[0][0]:.3f}, {u[1][0]:.3f})"
+            )
             x_pred = self.mpc1.data.prediction(('_x', 'x')).flatten()
             y_pred = self.mpc1.data.prediction(('_x', 'y')).flatten()
 
@@ -434,6 +438,10 @@ class PathMPC(Node):
 
             # Calculate prediction
             u = self.mpc2.make_step(p)
+            self.get_logger().info(
+                f"Robot 2: position=({self.x2:.2f}, {self.y2:.2f}), "
+                f"velocity=({u[0][0]:.3f}, {u[1][0]:.3f})"
+            )
             x_pred = self.mpc2.data.prediction(('_x', 'x')).flatten()
             y_pred = self.mpc2.data.prediction(('_x', 'y')).flatten()
 
