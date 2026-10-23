@@ -228,38 +228,38 @@ class PathPlannerNode(Node):
         # RRT
         valid_pose_paths = []
         valid_paths = []
-        while len(valid_paths) == 0:
-            num_nodes = 5000
-            for it in range(num_nodes):
 
-                r_x = np.random.uniform(origin_x, origin_x+map_width)
-                r_y = np.random.uniform(origin_y, origin_y+map_height)
-                random_pt = np.array([r_x, r_y], dtype=float)
+        num_nodes = 5000
+        for it in range(num_nodes):
 
-                _, closest_node = self.tree.get_closest_node(random_pt)
-                d = np.array(random_pt - closest_node.pt)
-                d_norm = np.linalg.norm(d)
-                border_pt = closest_node.pt + (d/d_norm)*self.node_max_dist
-                obs = self.check_obs(closest_node.pt,border_pt,map_msg)
-                if obs:
-                    continue
+            r_x = np.random.uniform(origin_x, origin_x+map_width)
+            r_y = np.random.uniform(origin_y, origin_y+map_height)
+            random_pt = np.array([r_x, r_y], dtype=float)
 
-                if d_norm < self.node_max_dist:
-                    new_node = TreeNode(pt=random_pt,parent=closest_node)
+            _, closest_node = self.tree.get_closest_node(random_pt)
+            d = np.array(random_pt - closest_node.pt)
+            d_norm = np.linalg.norm(d)
+            border_pt = closest_node.pt + (d/d_norm)*self.node_max_dist
+            obs = self.check_obs(closest_node.pt,border_pt,map_msg)
+            if obs:
+                continue
 
-                else:
-                    new_pt = border_pt
-                    new_node = TreeNode(pt=new_pt,parent=closest_node)
+            if d_norm < self.node_max_dist:
+                new_node = TreeNode(pt=random_pt,parent=closest_node)
 
-                self.tree_pts.append((closest_node.pt,new_node.pt))
+            else:
+                new_pt = border_pt
+                new_node = TreeNode(pt=new_pt,parent=closest_node)
 
-                closest_node.children.append(new_node)
+            self.tree_pts.append((closest_node.pt,new_node.pt))
 
-                if closest_node in self.leaves:
-                    self.leaves.remove(closest_node)
+            closest_node.children.append(new_node)
 
-                if np.linalg.norm(np.array(self.goal)-np.array(new_node.pt)) < self.goal_radius:
-                    self.leaves.append(new_node)
+            if closest_node in self.leaves:
+                self.leaves.remove(closest_node)
+
+            if np.linalg.norm(np.array(self.goal)-np.array(new_node.pt)) < self.goal_radius:
+                self.leaves.append(new_node)
 
             self.publish_tree(self.tree_pts)
 
@@ -304,6 +304,7 @@ class PathPlannerNode(Node):
                     valid_paths.append(path)
                 if len(valid_paths) < 1:
                     self.get_logger().info("YER HOLDIN THE MAP UPSIDE DOWN YE SCURVY DOG!")
+                    return
 
                 self.get_logger().info(f"NODES IN TREE: {len(self.tree_pts)}")
         print(f"DONE, Found {len(valid_paths)} valid paths")

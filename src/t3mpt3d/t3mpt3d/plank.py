@@ -175,7 +175,6 @@ class PlankMPC(Node):
         th2_raw = self.p2[2]
         thp_raw = np.arctan2(d[1], d[0])
 
-        # Handle continuity initialization and wrapping
         if self.prev_th1 is None:
             th1 = th1_raw
         else:
@@ -228,10 +227,10 @@ class PlankMPC(Node):
 
             self.x_desired, self.y_desired, self.yaw_desired = self.path[self.path_i]
 
-        #self.get_logger().info(f"P1: {self.p1}")
-        #self.get_logger().info(f"P2: {self.p2}")
-        #self.get_logger().info(f"PLANK: {self.plank} DESIRED: {self.path[self.path_i]}")
-        #self.publish_marker(self.x_desired, self.y_desired)
+        self.get_logger().info(f"P1: {self.p1}")
+        self.get_logger().info(f"P2: {self.p2}")
+        self.get_logger().info(f"PLANK: {self.plank} DESIRED: {self.path[self.path_i]}")
+        self.publish_marker(self.x_desired, self.y_desired)
 
         self.mpc.x0 = p0
         self.mpc.set_initial_guess()
