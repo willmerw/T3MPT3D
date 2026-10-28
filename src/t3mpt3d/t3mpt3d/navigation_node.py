@@ -457,12 +457,12 @@ class PathPlannerNode(Node):
         self.set_state(WAIT_MOVE)
         self.low_pub.publish(Bool(data=True))
 
-    def set_state(self, new):
+    def set_state(self, new): # updates state flags
         if new != self.state:
             self.get_logger().info(f"state {self.state} -> {new}")
             self.state = new
 
-    def to_my_frame(self, msg):
+    def to_my_frame(self, msg): #convert a msg into the robots own frame
         if self.map_frame is None: return None
         try:
             return self.tf_buffer.transform(msg, self.map_frame, timeout=Duration(seconds=0.1))
@@ -532,7 +532,7 @@ class PathPlannerNode(Node):
         turn = abs(np.arctan2(np.sin(ang), np.cos(ang)))
 
         cost = self.distance_gain * d + self.yaw_gain * turn - self.cluster_gain * gain # Target gets picked by distance, turning needed and cluster size.
-        if self._latest_target is not None:
+        if self._latest_target is not None: # penelty for being close to the other robots current target
             p = self.to_my_frame(self._latest_target)
             if p is not None:
                 d_o = np.hypot(fx - p.point.x, fy - p.point.y)
@@ -615,7 +615,7 @@ class PathPlannerNode(Node):
                   map_msg: OccupancyGrid,
                   frontier_msg: Optional[OccupancyGrid],
                   fixed_target):
-
+        # Map info start
         mapResolution = map_msg.info.resolution
         mapOrigin = map_msg.info.origin
         grid = np.array(map_msg.data, dtype=np.int8).reshape(map_msg.info.height, map_msg.info.width)
@@ -630,12 +630,14 @@ class PathPlannerNode(Node):
 
         x_max = x_min + w * mapResolution
         y_max = y_min + h * mapResolution
+        # Map info end
+        # disk radius and spacing calculation
         c = self.bot_radius + self.safty_margin
         disk_radius = c + (.71*mapResolution)
         spacing = 2*np.sqrt(disk_radius**2 - c**2)
 
         dr, dc = disk_offsets(disk_radius, mapResolution)
-
+        # Target selection
         if fixed_target is not None:
             self.target = fixed_target
         else:
@@ -729,7 +731,7 @@ class PathPlannerNode(Node):
                 self.failed.append((self.target[0], self.target[1], self.get_clock().now()))
                 self.get_logger().info(f"marking {self.target[0],self.target[1]} as failed")
                 return None
-
+            # Select winning goal node
             best_cost = np.inf
             best_node = None
             for index in range(len(goal_nodes)):
@@ -741,16 +743,17 @@ class PathPlannerNode(Node):
 
             waypoint = []
             node = best_node
-
+            # Create Path as node waypoints
             while node is not None: # Loop from goal node to root node
                 waypoint.append((node.x, node.y))
                 node = node.parent
 
             waypoint.reverse() # reverse list to get from root to goal
             self.get_logger().info(f"{len(waypoint)}, first:{waypoint[0]}, last:{waypoint[-1]}")
-
+            # Crutch to make sure the robot drive to the final plank position
             if fixed_target is not None and waypoint[-1] != (self.target[0], self.target[1]):
                 waypoint.append((self.target[0], self.target[1]))
+
             shorter_waypoints = [waypoint[0]] # init list with root node
             i = 0
             while i < len(waypoint) - 1:
