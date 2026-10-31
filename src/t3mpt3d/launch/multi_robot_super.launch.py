@@ -4,22 +4,20 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-
-# 1. IMPORT NODE HERE
 from launch_ros.actions import Node
 
 TB1_NAME = "tb3_1"
 TB2_NAME = "tb3_2"
 
 def generate_launch_description():
-    # Get the paths to your packages
+
     gazebo_pkg = get_package_share_directory('turtlebot3_gazebo')
     t3mpt3d_pkg = get_package_share_directory('t3mpt3d')
 
-    # Path to the Gazebo multi-launch file
+
     gazebo_multi_launch = os.path.join(gazebo_pkg, 'launch', 'multi_robot_world.launch.py')
 
-    # Path to the SLAM/Nav launch file
+
     slam_nav_launch = os.path.join(t3mpt3d_pkg, 'launch', 'plank_retrieval.launch.py')
 
     # --- INCLUDES ---
@@ -59,24 +57,21 @@ def generate_launch_description():
         }.items()
     )
 
-    # ==========================================
-    # 2. DEFINE YOUR EXTRA NODE HERE
-    # ==========================================
 
     mission_node = Node(
-        package='t3mpt3d',                  # Replace with your package name
-        executable='mission_control_node',      # Replace with your executable name
+        package='t3mpt3d',
+        executable='mission_control_node',
         name='mission_control',
         output='screen',
         parameters=[{'use_sim_time': True,
-                        "plank_pos1": [2.5, 4.8],  # maze_world: Gazebo (0.1, 2.4)
-                        "plank_pos2": [3.5, 4.8],  # maze_world: Gazebo (1.1, 2.4)
-                     }] # Good practice if relying on Gazebo time
+                        "plank_pos1": [2.5, 4.8],
+                        "plank_pos2": [3.5, 4.8],
+                     }]
     )
 
     map_merge_node = Node(
-        package='t3mpt3d',                  # Replace with your package name
-        executable='map_merge_node',      # Replace with your executable name
+        package='t3mpt3d',
+        executable='map_merge_node',
         name='map_merge',
         output='screen',
         parameters=[{'use_sim_time': True,
@@ -133,17 +128,16 @@ def generate_launch_description():
                  'tb2_odom_world': f'{TB2_NAME}/odom_world',}
             ],
         )
-    # Bridge for tb3_1 (Spawned at x=-2.0, y=-0.5)
+
     tf_world_to_tb3_1 = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
         name='static_tf_tb3_1',
-        # Removed --x, --y, etc. Just pure numbers in order: X, Y, Z, Yaw, Pitch, Roll, Parent, Child
-        arguments=['0.0', '0.0', '0.0', '0.0', '0.0', '0.0', 'world', f'{TB1_NAME}/map'], #ALWAYS (0,0)
+
+        arguments=['0.0', '0.0', '0.0', '0.0', '0.0', '0.0', 'world', f'{TB1_NAME}/map'],
         parameters=[{'use_sim_time': True}]
     )
 
-    # Bridge for tb3_2 (Spawned at x=-2.0, y=0.5)
     tf_world_to_tb3_2 = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
@@ -163,21 +157,21 @@ def generate_launch_description():
                         'tb2_odom': f'{TB2_NAME}/odom_world',
                         'tb1_path': f'{TB1_NAME}/path',
                         'tb2_path': f'{TB2_NAME}/path',
-                          }] # Good practice if relying on Gazebo time
+                          }]
     )
 
-    # 3. ADD THE NODE TO THE RETURN LIST
+
     return LaunchDescription([
         simulation,
         nav_tb3_1,
         nav_tb3_2,
         mission_node,
         map_merge_node,
-        tf_world_to_tb3_1, # <--- Added
-        tf_world_to_tb3_2,  # <--- Added
+        tf_world_to_tb3_1,
+        tf_world_to_tb3_2,
         frontier_detector,
         odom_to_world,
         path_follow,
-        plank_controller_node,   # <--- Added here
+        plank_controller_node,
         plank_planner_node,
     ])
