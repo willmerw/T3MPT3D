@@ -62,18 +62,31 @@ class PathMPC(Node):
         self.create_subscription(OccupancyGrid, 'map', self.map_callback, 10)
 
         # Params to keep track of poses
-        self.x1 = 0.0
-        self.y1 = 0.0
+        self.x1 = 1.0
+        self.y1 = -1.0
         self.yaw1 = 0.0
-        self.x2 = 0.0
-        self.y2 = 0.0
-        self.yaw2 = 0.0
+        self.x2 = 1.0
+        self.y2 = 1.0
+        self.yaw2 = 0
 
         # To store the paths
         self.path1 = []
         self.path_header1=""
         self.path2 = []
         self.path_header2=""
+
+        self.test_path1 = [
+            (1.0, -1.0 + i * 0.05)
+            for i in range(50)
+        ] 
+
+        self.test_path2 = [
+            (1.0, 1.0 - i * 0.05)
+            for i in range(50)
+        ] 
+
+        self.test_path_header1 = "world"
+        self.test_path_header2 = "world"
 
         # Store travelled paths
         self.traj1 = []
@@ -157,9 +170,9 @@ class PathMPC(Node):
         mpc.set_param(**setup_mpc)
         # Removing output
         mpc.settings.nlpsol_opts = {
-        'ipopt.print_level': 0,   # no iteration table
-        'ipopt.sb': 'yes',        # no IPOPT banner
-        'print_time': 0,          # no CasADi timing summary
+        'ipopt.print_level': 0,   
+        'ipopt.sb': 'yes',        
+        'print_time': 0,          
         }
 
         # Defining cost function
@@ -210,11 +223,13 @@ class PathMPC(Node):
             if model is self.model1:
                 pred = self.pred2
                 path = self.path1
+                #path = self.test_path1
                 x = self.x1
                 y = self.y1
             else:
                 pred = self.pred1
                 path = self.path2
+                #path = self.test_path2
                 x = self.x2
                 y = self.y2
 
