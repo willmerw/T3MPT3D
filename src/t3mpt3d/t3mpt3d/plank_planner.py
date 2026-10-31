@@ -17,6 +17,11 @@ from visualization_msgs.msg import Marker, MarkerArray
 
 import tf2_ros
 import numpy as np
+"""
+Plank planner
+
+Plans a safe path using the plank length
+"""
 
 def quat_to_yaw(q: Quaternion) -> float:
     """Extract planar yaw (rad) from a Quaternion."""
@@ -85,7 +90,7 @@ class PathPlannerNode(Node):
 
         self.node_max_dist = 0.2
         self.obs_fid = 0.01 #obstacle fidelity
-        self.plank_twist = np.pi/10
+        self.plank_twist = np.pi/10 # plank angle update increment
         self.goal_radius = 0.2
         self.map_inflation = 3
 
@@ -101,7 +106,7 @@ class PathPlannerNode(Node):
         self.goal_pub_vis = self.create_publisher(Marker, '/exit',transient_qos)
         self.plank_path_pub = self.create_publisher(MarkerArray, '/plank_path_vis', transient_qos) #Planks on the path
 
-        #HARRYS FLAGGOR
+        #Mission control flags
         self.rivstart = False
         self.start_sub = self.create_subscription(Bool, '/rivstart',self._on_start, plank_qos)
 
@@ -153,19 +158,18 @@ class PathPlannerNode(Node):
         pt1 = np.array([p1x,p1y])
         pt2 = np.array([p2x,p2y])
         d = pt2-pt1
-        self.r = np.linalg.norm(d)/2 + 0.2
+        self.r = np.linalg.norm(d)/2 + 0.2 # increasing the lenght of plank to increase safety when planning
         thp = np.arctan2(d[1],d[0])
         pt = pt1 + d/2
         x = pt[0]
         y = pt[1]
         self.start = [x,y,thp]
-        self.get_logger().info(f"START: {self.start}")
         self.received_start = True
 
 
     def _on_start(self,start_msg):
         self.rivstart = start_msg.data
-        self.get_logger().info("RAISING SAILS")
+
 
     def _on_map(self,map_msg):
         if not self.rivstart:
@@ -188,7 +192,7 @@ class PathPlannerNode(Node):
         print(plank_msg)
         if not self.plank_received:
             self.plank_received = True
-            self.get_logger().info("THE SHIP IS READY")
+
 
 
     def _on_goal(self,goal_msg):
@@ -197,21 +201,15 @@ class PathPlannerNode(Node):
             x = goal_msg.pose.position.x
             y = goal_msg.pose.position.y
             self.goal = [x,y]
-            self.get_logger().info("THE GOAL IS SET")
+
 
 
     def plan_path(self,map_msg: OccupancyGrid):
 
-        self.get_logger().info("READ THE MAP YE DOGS!")
-
         inf_map_msg = self.inflate_map(map_msg)
         self.inf_map_pub.publish(inf_map_msg)
-        print(map_msg.header.frame_id)
 
         x,y,thp = self.start
-
-        self.get_logger().info(f"THE GOAL IS {self.goal}")
-        self.get_logger().info(f"THE START IS {self.start}")
 
         map_res = map_msg.info.resolution
         map_height = map_msg.info.height * map_res
@@ -219,7 +217,6 @@ class PathPlannerNode(Node):
         origin_x = map_msg.info.origin.position.x
         origin_y = map_msg.info.origin.position.y
 
-        print(map_width,map_height,origin_x,origin_y)
         self.tree = TreeNode([x,y], None)
 
         self.tree_pts = []
@@ -258,29 +255,19 @@ class PathPlannerNode(Node):
             if closest_node in self.leaves:
                 self.leaves.remove(closest_node)
 
-            if np.linalg.norm(np.array(self.goal)-np.array(new_node.pt)) < self.goal_radius:
+            if np.linalg.norm(np.array(self.goal)-np.array(new_node.pt)) < self.goal_radius: # new node within radius of goal
                 self.leaves.append(new_node)
 
             self.publish_tree(self.tree_pts)
 
 
             r = self.r
-            self.get_logger().info(f"THE TREASSURE CAN BE REACHED VIA {len(self.leaves)} SALTY SEAS")
             for leaf in self.leaves:
                 path = leaf.get_path_to_root()
                 path = self.maximize_clearance(path, map_msg)
-                path = self.cut_trim(path)
+                path = self.cut_trim(path) # ensuring fixed resoluation of points on path
                 poses = []
-                """
-                for i in range(1,len(path)):
-                    prev_pt = np.array(path[i-1])
-                    pt = np.array(path[i])
-                    d = pt-prev_pt
-                    th = np.arctan2(d[1],d[0])
-                    poses.append([pt[0],pt[1],th])
-                valid_paths.append(path)
-                valid_pose_paths.append(poses)
-                """
+
                 for pt in path:
                     poses.append([pt[0],pt[1],thp])
 
@@ -293,7 +280,7 @@ class PathPlannerNode(Node):
 
                     if v_yaw:
                         poses = np.array(poses)
-                        poses[i:,2] = nthp
+                        poses[i:,2] = nthp # update subsequent poses to match valid yaw
                     else:
                         valid_path = False
                         break
@@ -303,15 +290,9 @@ class PathPlannerNode(Node):
                     valid_pose_paths.append(poses)
                     valid_paths.append(path)
                 if len(valid_paths) < 1:
-                    self.get_logger().info("YER HOLDIN THE MAP UPSIDE DOWN YE SCURVY DOG!")
                     return
 
-                self.get_logger().info(f"NODES IN TREE: {len(self.tree_pts)}")
-        print(f"DONE, Found {len(valid_paths)} valid paths")
-
-
-
-        best_path, best_pose_path = self.evaluate_valid_paths(valid_paths, valid_pose_paths)
+        best_path, best_pose_path = self.evaluate_valid_paths(valid_paths, valid_pose_paths) # heuristic evaluation
 
         self.pose_path = best_pose_path
         path = best_path
@@ -335,10 +316,12 @@ class PathPlannerNode(Node):
             path_pt_ls.append(path_pt)
         path_msg.poses = path_pt_ls
         self.path_pub.publish(path_msg)
-        self.get_logger().info("OOH I CAN SMELL THE RUM OOOZIN")
+
 
         return path
-
+    """
+    HELPER FUNCTIONS:
+    """
 
     def cut_trim(self,path, dist=0.3):
         path = np.array(path)
@@ -362,8 +345,6 @@ class PathPlannerNode(Node):
 
         return new_path
 
-
-
     def evaluate_valid_paths(self,paths,pose_paths):
         scores = []
         d_w = 1.0
@@ -383,51 +364,6 @@ class PathPlannerNode(Node):
 
         best_i = np.argmin(scores)
         return paths[best_i], pose_paths[best_i]
-
-
-    def publish_plank_path(self):
-        planks = MarkerArray()
-        #planks.header.frame_id = 'world'
-        for i,(x,y,thp) in enumerate(self.pose_path):
-            plank = self.plank_marker(x,y,thp,i)
-            plank.ns = "path_planks"
-            planks.markers.append(plank)
-
-        self.plank_path_pub.publish(planks)
-
-    def plank_marker(self,x,y,thp,id):
-            marker = Marker()
-
-            # Frame and timestamp configuration
-            marker.header.frame_id = "world"
-            marker.header.stamp = self.get_clock().now().to_msg()
-
-            # Namespace and ID to identify the marker
-            marker.ns = "lines"
-            marker.id = id
-
-            # Type: LINE_STRIP connects points sequentially (0-1, 1-2, 2-3...)
-            marker.type = Marker.LINE_STRIP
-            marker.action = Marker.ADD
-
-            # Scale: scale.x controls the line thickness (in meters)
-            marker.scale.x = 0.05
-
-            # Color and Alpha (opacity) - Alpha must be > 0 to be visible
-            marker.color.r = 1.0
-            marker.color.g = 0.0
-            marker.color.b = 0.0
-            marker.color.a = 1.0
-
-            shift = np.array([np.cos(thp),np.sin(thp)]) * (self.r-0.2)
-            p1 = np.array([x,y]) + shift
-            p2 = np.array([x,y]) - shift
-            pp1 = Point(x=p1[0], y=p1[1], z=0.0)
-            pp2 = Point(x=p2[0], y=p2[1], z=0.0)
-
-            marker.points = [pp1, pp2]
-
-            return marker
 
     def valid_yaw_exists(self,pt,thp,r):
         inc = 0
@@ -476,7 +412,124 @@ class PathPlannerNode(Node):
             check_pt += increment
         return obs
 
+    def inflate_map(self,map_msg):
+            map_grid = np.array(map_msg.data, dtype=np.int16).reshape(
+            (map_msg.info.height, map_msg.info.width))
+
+
+            rows, cols = np.where(map_grid >= 50)
+
+            for row,col in zip(rows,cols):
+                infl = self.map_inflation
+                for i in range(-infl,infl):
+                    for j in range(-infl,infl):
+                        try:
+                            map_grid[row+i][col+j] = 100
+                        except Exception as e:
+                            continue
+
+            map_msg.data = map_grid.ravel().tolist()
+            return map_msg
+
+    def maximize_clearance(self, path, map_msg, max_iterations: int = 15, step_size: float = 0.05):
+
+        map_grid = np.array(map_msg.data, dtype=np.int16).reshape(
+            (map_msg.info.height, map_msg.info.width)
+        )
+
+        obstacle_mask = (map_grid >= 50) | (map_grid == -1)
+
+        dist_map_px = distance_transform_edt(~obstacle_mask) # distance to obstacles
+
+        map_res = map_msg.info.resolution
+        dist_map = dist_map_px * map_res
+
+        origin_x = map_msg.info.origin.position.x
+        origin_y = map_msg.info.origin.position.y
+
+        optimized_path = [np.array(pt, dtype=float) for pt in path]
+
+        for _ in range(max_iterations):
+            new_path = []
+            for i, pt in enumerate(optimized_path):
+                if i == 0 or i == len(optimized_path) - 1: # end and start of path should be the same
+                    new_path.append(pt)
+                    continue
+
+                gx = (pt[0] - origin_x) / map_res
+                gy = (pt[1] - origin_y) / map_res
+                ix, iy = int(round(gx)), int(round(gy))
+
+                dx = dist_map[iy, ix+1] - dist_map[iy, ix-1]
+                dy = dist_map[iy+1, ix] - dist_map[iy-1, ix]
+                grad = np.array([dx, dy]) # direction away from obstacles
+                grad_norm = np.linalg.norm(grad)
+
+                if grad_norm > 1e-5:
+                    candidate_pt = pt + step_size * (grad / grad_norm)
+
+                    if not self.check_obs(optimized_path[i-1], candidate_pt, map_msg) and \
+                        not self.check_obs(candidate_pt, optimized_path[i+1], map_msg):
+                        new_path.append(candidate_pt)
+                        continue
+
+                new_path.append(pt)
+            optimized_path = new_path
+
+        return optimized_path
+
+    """
+    VISUALISATION FUNCTIONS:
+    """
+    def publish_plank_path(self):
+        """
+        Rviz visualisation
+        """
+        planks = MarkerArray()
+        for i,(x,y,thp) in enumerate(self.pose_path):
+            plank = self.plank_marker(x,y,thp,i)
+            plank.ns = "path_planks"
+            planks.markers.append(plank)
+
+        self.plank_path_pub.publish(planks)
+
+    def plank_marker(self,x,y,thp,id):
+        """
+        Rviz visualisation
+        """
+        marker = Marker()
+
+        marker.header.frame_id = "world"
+        marker.header.stamp = self.get_clock().now().to_msg()
+
+        marker.ns = "lines"
+        marker.id = id
+
+        marker.type = Marker.LINE_STRIP
+        marker.action = Marker.ADD
+
+
+        marker.scale.x = 0.05
+
+        marker.color.r = 1.0
+        marker.color.g = 0.0
+        marker.color.b = 0.0
+        marker.color.a = 1.0
+
+        shift = np.array([np.cos(thp),np.sin(thp)]) * (self.r-0.2)
+        p1 = np.array([x,y]) + shift
+        p2 = np.array([x,y]) - shift
+        pp1 = Point(x=p1[0], y=p1[1], z=0.0)
+        pp2 = Point(x=p2[0], y=p2[1], z=0.0)
+
+        marker.points = [pp1, pp2]
+
+        return marker
+
     def publish_tree(self, tree_edges):
+        """
+        Rviz visualisation
+        """
         marker = Marker()
         marker.header.frame_id = 'world'
         marker.header.stamp = self.get_clock().now().to_msg()
@@ -500,6 +553,9 @@ class PathPlannerNode(Node):
         self.tree_pub.publish(marker)
 
     def publish_goal(self, pt):
+        """
+        Rviz visualisation
+        """
         marker = Marker()
         marker.header.frame_id = 'world'
         marker.header.stamp = self.get_clock().now().to_msg()
@@ -524,132 +580,6 @@ class PathPlannerNode(Node):
         marker.color.a = 1.0
 
         self.goal_pub_vis.publish(marker)
-
-    def optimize_path(self, path, map_msg):
-        i = 0
-        while (i+2) < len(path)-1:
-            child = path[i]
-            gp = path[i+2]
-            obs = self.check_obs(child,gp,map_msg)
-
-            if not obs:
-                path.pop(i+1)
-            else:
-                i+=1
-
-        i = 0
-        while (i+2) < len(path)-1:
-            child = path[i]
-            middle = path[i+1]
-            gp = path[i+2]
-
-            step_size = 0.1
-
-            c_m = np.array(middle-child)
-            d1 = np.linalg.norm(c_m)
-            c_md = np.linalg.norm(c_m)
-            c_m = (c_m/c_md)*step_size
-
-
-            gp_m = np.array(middle-gp)
-            d2 = np.linalg.norm(gp_m)
-            gp_md = np.linalg.norm(gp_m)
-            gp_m = (gp_m/gp_md)*step_size
-
-            child_n = child.copy()
-            gp_n = gp.copy()
-
-
-            while (np.linalg.norm(child_n-child) < d1 and np.linalg.norm(gp_n-gp) < d2):
-                child_n += c_m
-                gp_n += gp_m
-                obs = self.check_obs(child_n,gp_n,map_msg)
-                if not obs:
-                    path.pop(i+1)
-                    path[i+1:i+1] = [child_n, gp_n]
-
-                    break
-            i = i+2
-        segment_path = []
-        for i in range(len(path)-1):
-            segment_length = np.linalg.norm(path[i]-path[i+1])
-            segment = list(np.linspace(path[i],path[i+1],int(segment_length/0.1)))
-            segment_path = segment_path + segment
-        path = segment_path
-
-        return path
-
-    def inflate_map(self,map_msg):
-        map_grid = np.array(map_msg.data, dtype=np.int16).reshape(
-        (map_msg.info.height, map_msg.info.width))
-
-
-        rows, cols = np.where(map_grid >= 50)
-
-        for row,col in zip(rows,cols):
-            infl = self.map_inflation
-            for i in range(-infl,infl):
-                for j in range(-infl,infl):
-                    try:
-                        map_grid[row+i][col+j] = 100
-                    except Exception as e:
-                        continue
-
-        map_msg.data = map_grid.ravel().tolist()
-        return map_msg
-
-    def maximize_clearance(self, path, map_msg, max_iterations: int = 15, step_size: float = 0.05):
-
-        map_grid = np.array(map_msg.data, dtype=np.int16).reshape(
-            (map_msg.info.height, map_msg.info.width)
-        )
-
-
-        obstacle_mask = (map_grid >= 50) | (map_grid == -1)
-
-
-        dist_map_px = distance_transform_edt(~obstacle_mask)
-
-        map_res = map_msg.info.resolution
-        dist_map = dist_map_px * map_res
-
-        origin_x = map_msg.info.origin.position.x
-        origin_y = map_msg.info.origin.position.y
-
-        optimized_path = [np.array(pt, dtype=float) for pt in path]
-
-        for _ in range(max_iterations):
-            new_path = []
-            for i, pt in enumerate(optimized_path):
-                if i == 0 or i == len(optimized_path) - 1:
-                    new_path.append(pt)
-                    continue
-
-                gx = (pt[0] - origin_x) / map_res
-                gy = (pt[1] - origin_y) / map_res
-                ix, iy = int(round(gx)), int(round(gy))
-
-                if not (1 <= ix < map_msg.info.width - 1 and 1 <= iy < map_msg.info.height - 1):
-                    new_path.append(pt)
-                    continue
-
-                dx = dist_map[iy, ix+1] - dist_map[iy, ix-1]
-                dy = dist_map[iy+1, ix] - dist_map[iy-1, ix]
-                grad = np.array([dx, dy])
-                grad_norm = np.linalg.norm(grad)
-
-                if grad_norm > 1e-5:
-                    candidate_pt = pt + step_size * (grad / grad_norm)
-
-                    if not self.check_obs(optimized_path[i-1], candidate_pt, map_msg) and \
-                       not self.check_obs(candidate_pt, optimized_path[i+1], map_msg):
-                        new_path.append(candidate_pt)
-                        continue
-
-                new_path.append(pt)
-            optimized_path = new_path
-
-        return optimized_path
 
 
 def main() -> None:

@@ -13,6 +13,12 @@ from geometry_msgs.msg import Point
 import numpy as np
 import math
 
+"""
+Plank MPC
+
+Model and control of the MPC that steers the two turtlebots as a single system
+"""
+
 class PlankMPC(Node):
     def __init__(self):
         super().__init__('turtle_mpc_node')
@@ -75,7 +81,7 @@ class PlankMPC(Node):
 
         self.p1 = [0.0, 0.0, None]
         self.p2 = [0.0, 0.0, None]
-        self.prev_thp = None  # Track previous plank angle for continuity
+        self.prev_thp = None  # track previous plank angle
         self.prev_th1 = None
         self.prev_th2 = None
 
@@ -94,7 +100,7 @@ class PlankMPC(Node):
         self.model.setup()
         self.path = [] #x,y,yaw
         self.path_i=0
-        ts = 0.1
+        ts = 0.1 # sampling time
         self.N = 40 # horizon
 
         self.mpc = self.definePlankMPC(self.model, ts, self.N)
@@ -169,12 +175,14 @@ class PlankMPC(Node):
         xy1 = np.array([self.p1[0], self.p1[1]])
         xy2 = np.array([self.p2[0], self.p2[1]])
         d = xy2 - xy1
-        pxy = xy1 + d / 2.0
+        pxy = xy1 + d / 2.0 # plank position is midway point of the two robots
 
         th1_raw = self.p1[2]
         th2_raw = self.p2[2]
         thp_raw = np.arctan2(d[1], d[0])
 
+
+        # update angles to remove sign flipping at +- pi
         if self.prev_th1 is None:
             th1 = th1_raw
         else:
@@ -227,9 +235,6 @@ class PlankMPC(Node):
 
             self.x_desired, self.y_desired, self.yaw_desired = self.path[self.path_i]
 
-        self.get_logger().info(f"P1: {self.p1}")
-        self.get_logger().info(f"P2: {self.p2}")
-        self.get_logger().info(f"PLANK: {self.plank} DESIRED: {self.path[self.path_i]}")
         self.publish_marker(self.x_desired, self.y_desired)
 
         self.mpc.x0 = p0
@@ -255,7 +260,6 @@ class PlankMPC(Node):
 
         x_pred = self.mpc.data.prediction(('_x', 'x')).flatten()
         y_pred = self.mpc.data.prediction(('_x', 'y')).flatten()
-        pred_trajectory = np.hstack([x_pred, y_pred])
 
         path_msg = Path()
         path_msg.header.stamp = self.get_clock().now().to_msg()
@@ -285,91 +289,6 @@ class PlankMPC(Node):
 
         self.r1_pub.publish(r1_cmd)
         self.r2_pub.publish(r2_cmd)
-
-    def plank_marker(self,x,y,thp,id):
-        marker = Marker()
-
-        # Frame and timestamp configuration
-        marker.header.frame_id = "world"
-        marker.header.stamp = self.get_clock().now().to_msg()
-
-        # Namespace and ID to identify the marker
-        marker.ns = "lines"
-        marker.id = id
-
-        # Type: LINE_STRIP connects points sequentially (0-1, 1-2, 2-3...)
-        marker.type = Marker.LINE_STRIP
-        marker.action = Marker.ADD
-
-        # Scale: scale.x controls the line thickness (in meters)
-        marker.scale.x = 0.05
-
-        # Color and Alpha (opacity) - Alpha must be > 0 to be visible
-        marker.color.r = 0.0
-        marker.color.g = 0.0
-        marker.color.b = 1.0
-        marker.color.a = 1.0
-
-        shift = np.array([np.cos(thp),np.sin(thp)]) * (self.r-0.2)
-        p1 = np.array([x,y]) + shift
-        p2 = np.array([x,y]) - shift
-        pp1 = Point(x=p1[0], y=p1[1], z=0.0)
-        pp2 = Point(x=p2[0], y=p2[1], z=0.0)
-
-        marker.points = [pp1, pp2]
-
-        return marker
-
-    def publish_plank_odom(self):
-        odom = Odometry()
-        x,y,th1,th2,thp = self.plank
-        odom.header.frame_id = "map"
-        odom.pose.pose.position.x = x
-        odom.pose.pose.position.y = y
-        qx = 0.0
-        qy = 0.0
-        qz = math.sin(thp / 2.0)
-        qw = math.cos(thp / 2.0)
-        odom.pose.pose.orientation.x = qx
-        odom.pose.pose.orientation.y = qy
-        odom.pose.pose.orientation.z = qz
-        odom.pose.pose.orientation.w = qw
-
-        self.plank_odom_pub.publish(odom)
-
-    def publish_marker(self, x,y):
-        marker = Marker()
-
-        # Frame and timestamp configuration
-        marker.header.frame_id = 'world'
-        marker.header.stamp = self.get_clock().now().to_msg()
-
-        # Unique namespace/ID pair (use a different ID or ns from the line marker)
-        marker.ns = "shapes"
-        marker.id = 1
-
-        # Marker types: Marker.SPHERE, Marker.CUBE, Marker.CYLINDER, Marker.ARROW, etc.
-        marker.type = Marker.SPHERE
-        marker.action = Marker.ADD
-
-        # Position and Orientation
-        marker.pose.position.x = x
-        marker.pose.position.y = y
-        marker.pose.position.z = 0.0
-        marker.pose.orientation.w = 1.0  # Valid quaternion required
-
-        # Scale: Dimensions in meters (x, y, z represent diameter/size)
-        marker.scale.x = 0.1
-        marker.scale.y = 0.1
-        marker.scale.z = 0.01
-
-        # Color (RGBA)
-        marker.color.r = 0.0
-        marker.color.g = 1.0
-        marker.color.b = 0.0
-        marker.color.a = 1.0
-
-        self.marker_pub.publish(marker)
 
 
     def definePlankModel(self,r):
@@ -421,14 +340,15 @@ class PlankMPC(Node):
             'store_full_solution': True
         }
         mpc.set_param(**setup_mpc)
+
+        # turn off mpc printing
         mpc.settings.nlpsol_opts = {
-                'ipopt.print_level': 0,   # no iteration table
-                'ipopt.sb': 'yes',        # no IPOPT banner
-                'print_time': 0,          # no CasADi timing summary
+                'ipopt.print_level': 0,
+                'ipopt.sb': 'yes',
+                'print_time': 0,
                 }
-        pos_error = (model.x['x'] - model.tvp['x_goal'])**2 + (model.x['y'] - model.tvp['y_goal'])**2
-        yaw_error = 1.0 - ca.cos(model.x['thp'] - model.tvp['yaw_goal'])
-        lterm = pos_error + 1.0 * yaw_error
+
+
         mterm = (model.x['x'] - model.tvp['x_goal'])**2 + (model.x['y'] - model.tvp['y_goal'])**2
         lterm = (model.x['x'] - model.tvp['x_goal'])**2 + (model.x['thp'] - model.tvp['yaw_goal'])**2
         mpc.set_objective(mterm=mterm, lterm=lterm)
@@ -465,36 +385,105 @@ class PlankMPC(Node):
             soft_constraint=True,
             penalty_term_cons=1e2
         )
-        """
-        tvp_template = mpc.get_tvp_template()
 
-        def tvp_fun(t_now):
-            # Don't use whole path every time
-            start_idx = self.closest_path_index()
-
-            for k in range(N + 1):
-                # Updating goal
-                if len(self.path) > 0:
-                    idx = min(start_idx + k, len(self.path) - 1)
-                    tvp_template['_tvp', k, 'x_goal'] = self.path[idx][0]
-                    tvp_template['_tvp', k, 'y_goal'] = self.path[idx][1]
-                    tvp_template['_tvp', k, 'yaw_goal'] = self.path[idx][2]
-
-            return tvp_template
-
-        mpc.set_tvp_fun(tvp_fun)
-        """
         return mpc
-    # Finding closest path index
-    def closest_path_index(self):
+
+    """
+    Visualisation functions
+    """
+    def plank_marker(self,x,y,thp,id):
+        """
+        Rviz visualisation
+        """
+        marker = Marker()
+
+        # Frame and timestamp configuration
+        marker.header.frame_id = "world"
+        marker.header.stamp = self.get_clock().now().to_msg()
+
+        # Namespace and ID to identify the marker
+        marker.ns = "lines"
+        marker.id = id
+
+        # Type: LINE_STRIP connects points sequentially (0-1, 1-2, 2-3...)
+        marker.type = Marker.LINE_STRIP
+        marker.action = Marker.ADD
+
+        # Scale: scale.x controls the line thickness (in meters)
+        marker.scale.x = 0.05
+
+        # Color and Alpha (opacity) - Alpha must be > 0 to be visible
+        marker.color.r = 0.0
+        marker.color.g = 0.0
+        marker.color.b = 1.0
+        marker.color.a = 1.0
+
+        shift = np.array([np.cos(thp),np.sin(thp)]) * (self.r-0.2)
+        p1 = np.array([x,y]) + shift
+        p2 = np.array([x,y]) - shift
+        pp1 = Point(x=p1[0], y=p1[1], z=0.0)
+        pp2 = Point(x=p2[0], y=p2[1], z=0.0)
+
+        marker.points = [pp1, pp2]
+
+        return marker
+
+    def publish_plank_odom(self):
+        """
+        Rviz visualisation
+        """
+        odom = Odometry()
         x,y,th1,th2,thp = self.plank
-        if not self.path:
-            return 0
-        distances = [
-            (px - x)**2 + (py - y)**2
-            for px, py,_ in self.path
-        ]
-        return int(np.argmin(distances))
+        odom.header.frame_id = "map"
+        odom.pose.pose.position.x = x
+        odom.pose.pose.position.y = y
+        qx = 0.0
+        qy = 0.0
+        qz = math.sin(thp / 2.0)
+        qw = math.cos(thp / 2.0)
+        odom.pose.pose.orientation.x = qx
+        odom.pose.pose.orientation.y = qy
+        odom.pose.pose.orientation.z = qz
+        odom.pose.pose.orientation.w = qw
+
+        self.plank_odom_pub.publish(odom)
+
+    def publish_marker(self, x,y):
+        """
+        Rviz visualisation
+        """
+        marker = Marker()
+
+        # Frame and timestamp configuration
+        marker.header.frame_id = 'world'
+        marker.header.stamp = self.get_clock().now().to_msg()
+
+        # Unique namespace/ID pair (use a different ID or ns from the line marker)
+        marker.ns = "shapes"
+        marker.id = 1
+
+        # Marker types: Marker.SPHERE, Marker.CUBE, Marker.CYLINDER, Marker.ARROW, etc.
+        marker.type = Marker.SPHERE
+        marker.action = Marker.ADD
+
+        # Position and Orientation
+        marker.pose.position.x = x
+        marker.pose.position.y = y
+        marker.pose.position.z = 0.0
+        marker.pose.orientation.w = 1.0  # Valid quaternion required
+
+        # Scale: Dimensions in meters (x, y, z represent diameter/size)
+        marker.scale.x = 0.1
+        marker.scale.y = 0.1
+        marker.scale.z = 0.01
+
+        # Color (RGBA)
+        marker.color.r = 0.0
+        marker.color.g = 1.0
+        marker.color.b = 0.0
+        marker.color.a = 1.0
+
+        self.marker_pub.publish(marker)
 def main(): # Main Function
     rclpy.init()
     node = PlankMPC()
