@@ -15,7 +15,7 @@ from t3mpt3d.navigation_node import disk_offsets
 class MultiMapMerge(Node):
     def __init__(self):
         super().__init__('multi_map_merge')
-
+        #Declare parameters
         self.declare_parameter("tb1_map_topic", "tb1_map_topic")
         self.declare_parameter("tb2_map_topic", "tb2_map_topic")
 
@@ -61,6 +61,7 @@ class MultiMapMerge(Node):
         self.sub_map1 = message_filters.Subscriber(self, OccupancyGrid, tb1, qos_profile=map_qos)
         self.sub_map2 = message_filters.Subscriber(self, OccupancyGrid, tb2, qos_profile=map_qos)
 
+        # Ros2 Approximate Time Synchronizer to sync the map topics. I has 0.5 sec between topics if they can be synced.
         self.ts = message_filters.ApproximateTimeSynchronizer(
             [self.sub_map1, self.sub_map2],
             queue_size=10,
@@ -72,23 +73,30 @@ class MultiMapMerge(Node):
         self.get_logger().info("Map Synchronizer and TF2 Listener started.")
 
     def remember(self, i ,p):
+        # Save the states of the robots to remove obstacle the are detected inside.
         last = self.last_stored[i]
         if last is None or np.hypot(p[0] - last[0], p[1] - last[1]) > self.visit_step:
             self.visited.append(p)
             self.last_stored[i] = p
 
     def odom_callback(self,odom1_msg,odom2_msg):
+        #Odometry callback
         self.p1 = [odom1_msg.pose.pose.position.x, odom1_msg.pose.pose.position.y]
 
         self.p2 = [odom2_msg.pose.pose.position.x, odom2_msg.pose.pose.position.y]
 
+        # save ing states
         self.remember(0, self.p1)
         self.remember(1, self.p2)
 
     def map_callback(self, map1_msg: OccupancyGrid, map2_msg: OccupancyGrid):
+
+        # Map callback to merge two occupancy grids
         frame1 = map1_msg.header.frame_id.lstrip('/')
         frame2 = map2_msg.header.frame_id.lstrip('/')
 
+        # Use TF lookup to find the transform between the frames. 
+        # If successful, frame2 is transformed into the frame1 coordinate system.
         try:
             t = self.tf_buffer.lookup_transform(frame1, frame2, rclpy.time.Time())
         except TransformException as ex:
@@ -97,49 +105,50 @@ class MultiMapMerge(Node):
 
         res = map1_msg.info.resolution
 
-        # 1. Global spatial boundaries for map 1 in frame1
+        # Calculate the global min and max boundaries for map 1
         m1_min_x = map1_msg.info.origin.position.x
         m1_min_y = map1_msg.info.origin.position.y
         m1_max_x = m1_min_x + map1_msg.info.width * res
         m1_max_y = m1_min_y + map1_msg.info.height * res
 
-        # 2. Global spatial boundaries for map 2 transformed into frame1
+        # Calculate the global min and max boundaries for map 2, applying the frame transformation
         m2_min_x = t.transform.translation.x + map2_msg.info.origin.position.x
         m2_min_y = t.transform.translation.y + map2_msg.info.origin.position.y
         m2_max_x = m2_min_x + map2_msg.info.width * res
         m2_max_y = m2_min_y + map2_msg.info.height * res
 
-        # 3. Compute union bounding box
+        # Compute the new boundaries of the combined (union) map
         union_min_x = min(m1_min_x, m2_min_x)
         union_min_y = min(m1_min_y, m2_min_y)
         union_max_x = max(m1_max_x, m2_max_x)
         union_max_y = max(m1_max_y, m2_max_y)
 
+        # Compute the width and height of the combined map
         union_w = int(np.ceil((union_max_x - union_min_x) / res))
         union_h = int(np.ceil((union_max_y - union_min_y) / res))
 
-        # 4. Compute pixel translation vectors relative to the new origin
+        # Compute pixel translation vectors relative to the new origin
         dx1_px = int(round((m1_min_x - union_min_x) / res))
         dy1_px = int(round((m1_min_y - union_min_y) / res))
 
         dx2_px = int(round((m2_min_x - union_min_x) / res))
         dy2_px = int(round((m2_min_y - union_min_y) / res))
 
-        # 5. Extract grid arrays
+        # Extract grid arrays
         grid1 = np.array(map1_msg.data, dtype=np.int16).reshape((map1_msg.info.height, map1_msg.info.width))
         grid2 = np.array(map2_msg.data, dtype=np.int16).reshape((map2_msg.info.height, map2_msg.info.width))
 
-        # 6. Warp both grids onto the unified dynamic canvas
+        # Warp both grids onto the unified dynamic canvas
         M1 = np.float32([[1, 0, dx1_px], [0, 1, dy1_px]])
         M2 = np.float32([[1, 0, dx2_px], [0, 1, dy2_px]])
 
         aligned_g1 = cv2.warpAffine(grid1, M1, (union_w, union_h), borderValue=-1)
         aligned_g2 = cv2.warpAffine(grid2, M2, (union_w, union_h), borderValue=-1)
 
-        # 7. Merge maps (prioritize known values over unknown -1)
+        # Merge maps (prioritize known values over unknown -1)
         merged = np.where(aligned_g1 != -1, aligned_g1, aligned_g2)
 
-        #Clear free space round robots
+        # Clear free space around the robots
         if self.visited:
             p = np.array(self.visited)
             cx = np.round((p[:,0] - union_min_x)/ res).astype(int)
@@ -152,7 +161,7 @@ class MultiMapMerge(Node):
 
             merged[rows[ok], cols[ok]] = 0
 
-        # 8. Construct output OccupancyGrid message
+        # Construct output OccupancyGrid message
         out_msg = OccupancyGrid()
         out_msg.header = map1_msg.header
         out_msg.info.resolution = res
